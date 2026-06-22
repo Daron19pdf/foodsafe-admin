@@ -2,11 +2,8 @@ import React, { useState } from 'react'
 import Overview from './Overview'
 import Users from './Users'
 import History from './History'
-import Calendar from './Calendar'
-
 const PAGES = [
   { id: 'overview', label: 'Vue d\'ensemble', icon: '📊' },
-  { id: 'calendar', label: 'Calendrier', icon: '📅' },
   { id: 'history', label: 'Historique HACCP', icon: '📋' },
   { id: 'users', label: 'Utilisateurs', icon: '👥' },
 ];
@@ -46,9 +43,21 @@ export default function Dashboard({ auth, onLogout }) {
                 background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '12px',
               }}
             >
-              {auth.etablissements.map(et => (
-                <option key={et._id} value={et._id} style={{ color: '#333' }}>{et.nom}</option>
-              ))}
+              {(() => {
+                const communes = {};
+                auth.etablissements.forEach(et => {
+                  const cName = et.commune?.nom || 'Autre';
+                  if (!communes[cName]) communes[cName] = [];
+                  communes[cName].push(et);
+                });
+                return Object.entries(communes).map(([cName, cEtabs]) => (
+                  <optgroup key={cName} label={cName} style={{ color: '#333' }}>
+                    {cEtabs.map(et => (
+                      <option key={et._id} value={et._id} style={{ color: '#333' }}>{et.nom}</option>
+                    ))}
+                  </optgroup>
+                ));
+              })()}
             </select>
           </div>
         )}
@@ -73,8 +82,8 @@ export default function Dashboard({ auth, onLogout }) {
 
       <main className="main-content">
         {page === 'overview' && <Overview auth={auth} etab={selectedEtab} onNavigate={(p, et) => { setSelectedEtab(et); setPage(p); }} />}
-        {page === 'calendar' && <Calendar auth={auth} />}
-        {page === 'history' && <History auth={auth} etab={selectedEtab} />}
+
+        {page === 'history' && <History auth={auth} etab={selectedEtab} onChangeEtab={setSelectedEtab} />}
         {page === 'users' && <Users auth={auth} etab={selectedEtab} />}
       </main>
     </div>

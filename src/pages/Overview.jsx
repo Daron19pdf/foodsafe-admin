@@ -25,6 +25,8 @@ export default function Overview({ auth, etab, onNavigate }) {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportData, setExportData] = useState(null);
   const [exportLoading, setExportLoading] = useState(false);
+  const [exportPreset, setExportPreset] = useState('');
+  const [openCommunes, setOpenCommunes] = useState({});
 
   const [weekData, setWeekData] = useState({});
 
@@ -49,31 +51,19 @@ export default function Overview({ auth, etab, onNavigate }) {
 
   useEffect(() => {
     setLoading(true);
-    const weekStart = getWeekStart(selectedDate);
-    const prev = getPrevWeek(selectedDate);
-
-    const promises = etabs.map(async (et) => {
-      const [dayRes, weekRes, prevWeekRes, eqRes] = await Promise.all([
-        getSaveData(auth.token, et._id, selectedDate, selectedDate),
-        getSaveData(auth.token, et._id, weekStart, selectedDate),
-        getSaveData(auth.token, et._id, prev.start, prev.end),
-        getEquipement(auth.token, et._id),
-      ]);
-      return {
-        id: et._id, nom: et.nom,
-        entries: dayRes.result ? dayRes.data : [],
-        weekEntries: weekRes.result ? weekRes.data : [],
-        prevWeekEntries: prevWeekRes.result ? prevWeekRes.data : [],
-        equipement: eqRes.result ? eqRes.equipement : null,
-      };
-    });
-
-    Promise.all(promises).then(results => {
-      const dataMap = {};
-      results.forEach(r => { dataMap[r.id] = r; });
-      setAllData(dataMap);
-      setLoading(false);
-    }).catch(err => { console.error('Overview fetch error:', err); setLoading(false); });
+    fetch(`https://haccp3-0-backend.vercel.app/saveData/overview?date=${selectedDate}`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (json.result) {
+          const dataMap = {};
+          json.data.forEach(r => { dataMap[r.id] = r; });
+          setAllData(dataMap);
+        }
+        setLoading(false);
+      })
+      .catch(err => { console.error('Overview fetch error:', err); setLoading(false); });
   }, [selectedDate]);
 
   const countByType = (entries, type) => entries.filter(e => e.type === type).length;
@@ -89,18 +79,19 @@ export default function Overview({ auth, etab, onNavigate }) {
     return false;
   };
 
-  const getNCs = (entries) => {
+  const getNCs = (entries, excludeFiches = false) => {
     const ncs = [];
     entries.forEach(e => {
+      const date = new Date(e.createdAt).toLocaleDateString('fr-FR');
       if (e.type === 'nonConformite') {
-        ncs.push({ type: e.data?.typeNC || 'NC', produit: e.data?.produit, valeur: e.data?.valeur, action: e.data?.actionCorrective, by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' });
+        if (!excludeFiches) ncs.push({ date, type: e.data?.typeNC || 'NC', produit: e.data?.produit, valeur: e.data?.valeur, action: e.data?.actionCorrective, by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' });
         return;
       }
       const keys = ['dataTemp', 'dataCuisson', 'dataCellule', 'dataService', 'dataLivraison', 'dataOil', 'dataEtalonnage'];
       for (const k of keys) {
         if (Array.isArray(e.data?.[k])) {
           e.data[k].filter(i => i.conforme === false).forEach(item => {
-            ncs.push({ type: e.type, produit: item.plat || item.fridge || item.friteuse || item.produit || '—', valeur: item.temperature || item.tpc || '', by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' });
+            ncs.push({ date, type: e.type, produit: item.plat || item.fridge || item.friteuse || item.produit || '—', valeur: item.temperature || item.tpc || '', observation: item.observation || '', by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' });
           });
         }
       }
@@ -208,6 +199,7 @@ export default function Overview({ auth, etab, onNavigate }) {
     setExportLoading(false);
     generatePDF(dataMap);
     setShowExportModal(false);
+    setExportPreset('');
   };
 
   const generatePDF = (pdfData) => {
@@ -215,7 +207,7 @@ export default function Overview({ auth, etab, onNavigate }) {
     const endLabel = new Date(exportEnd).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
     const dateLabel = exportStart === exportEnd ? startLabel : `${startLabel} au ${endLabel}`;
 
-    const sectionIcons = { 'Non-conformités': '🚨', 'Relevé frigo': '🧊', 'Fin de cuisson': '🔥', 'Contrôle au service': '🍽️', 'Cellule refroidissement': '❄️', 'Départ / Arrivée': '🚚', 'Plan de nettoyage': '🧹', 'Test huile': '🛢️', 'Étalonnage': '🌡️' };
+    const sectionIcons = { 'Non-conformités détectées': '🚨', 'Relevé frigo': '🧊', 'Fin de cuisson': '🔥', 'Contrôle au service': '🍽️', 'Cellule refroidissement': '❄️', 'Départ / Arrivée': '🚚', 'Plan de nettoyage': '🧹', 'Test huile': '🛢️', 'Étalonnage': '🌡️' };
     const section = (title, color, content) => `<div style="margin-top:16px;"><div style="background:${color};color:#fff;padding:8px 14px;border-radius:8px 8px 0 0;font-weight:700;font-size:12px;">${sectionIcons[title] || '📋'} ${title}</div><div style="border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;padding:10px;">${content}</div></div>`;
     const confCell = (v) => v === undefined ? '' : `<span style="color:${v ? '#2D6A4F' : '#E05C5C'};font-weight:700">${v ? '✅ C' : '❌ NC'}</span>`;
 
@@ -241,7 +233,7 @@ export default function Overview({ auth, etab, onNavigate }) {
       const entries = d?.entries || [];
       const eq = d?.equipement;
       const pct = getCompletionPct(entries, eq);
-      const ncs = getNCs(entries);
+      const ncs = getNCs(entries, true);
 
       body += `<div style="page-break-inside:avoid;margin-top:28px;border:2px solid #2D6A4F;border-radius:12px;overflow:hidden;">`;
       body += `<div style="background:#2D6A4F;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:16px;font-weight:700;">🏫 ${et.nom}</span><span style="background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:20px;font-size:12px;">${pct}%</span></div>`;
@@ -262,41 +254,77 @@ export default function Overview({ auth, etab, onNavigate }) {
       if (ncs.length > 0) {
         let ncRows = '';
         ncs.forEach(nc => {
-          ncRows += `<tr style="background:#FFF5F5"><td>${nc.type}</td><td>${nc.produit || '—'}</td><td style="color:#E05C5C;font-weight:700">${nc.valeur || '—'}</td><td>${nc.action || '—'}</td><td style="font-size:9px">${nc.by}</td></tr>`;
+          ncRows += `<tr style="background:#FFF5F5"><td style="font-size:9px">${nc.date}</td><td>${nc.type}</td><td>${nc.produit || '—'}</td><td style="color:#E05C5C;font-weight:700">${nc.valeur || '—'}</td><td style="font-size:9px;color:#C7793A">${nc.observation || '—'}</td><td style="font-size:9px">${nc.by}</td></tr>`;
         });
-        body += section('Non-conformités', '#E05C5C', `<table><thead><tr><th>Type</th><th>Produit</th><th>Valeur</th><th>Action</th><th>Par</th></tr></thead><tbody>${ncRows}</tbody></table>`);
+        body += section('Non-conformités détectées', '#E05C5C', `<table><thead><tr><th>Date</th><th>Type</th><th>Produit</th><th>Valeur</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${ncRows}</tbody></table>`);
       }
 
       // Frigo
-      const frigoItems = entries.filter(e => e.type === 'tempFridge').flatMap(e => (e.data?.dataTemp || []).map(i => ({ ...i, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' })));
+      const frigoItems = entries.filter(e => e.type === 'tempFridge').flatMap(e => (e.data?.dataTemp || []).map(i => {
+        let conf = i.conforme;
+        if (conf === undefined || conf === null) {
+          const t = parseFloat((i.temperature || '').replace('°C', '').replace(',', '.'));
+          const isCongel = (i.fridge || '').toLowerCase().includes('congél') || (i.fridge || '').toLowerCase().includes('congel');
+          conf = !isNaN(t) ? (isCongel ? t <= -18 : t <= 3) : undefined;
+        }
+        return { ...i, conforme: conf, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' };
+      }));
       if (frigoItems.length > 0) {
         let rows = frigoItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.fridge}</td><td>${i.period}</td><td style="font-weight:700">${i.temperature}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px;color:#C7793A">${i.observation || '—'}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
-        body += section('Relevé frigo', '#4A90D9', `<table><thead><tr><th>Date</th><th>Équipement</th><th>Période</th><th>T°</th><th>Conf.</th><th>Obs.</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        body += section('Relevé frigo', '#4A90D9', `<table><thead><tr><th>Date</th><th>Équipement</th><th>Période</th><th>Température</th><th>Conformité</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       // Cuisson
-      const cuissonItems = entries.filter(e => e.type === 'tempCuisson').flatMap(e => (e.data?.dataCuisson || []).map(i => ({ ...i, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' })));
+      const cuissonItems = entries.filter(e => e.type === 'tempCuisson').flatMap(e => (e.data?.dataCuisson || []).map(i => {
+        let conf = i.conforme;
+        if (conf === undefined || conf === null) {
+          const t = parseFloat((i.temperature || '').replace('°C', '').replace(',', '.'));
+          conf = !isNaN(t) ? t >= 63 : undefined;
+        }
+        return { ...i, conforme: conf, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' };
+      }));
       if (cuissonItems.length > 0) {
-        let rows = cuissonItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.plat}</td><td style="font-weight:700">${i.temperature}</td><td>${i.heure || '—'}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
-        body += section('Fin de cuisson', '#E8855A', `<table><thead><tr><th>Date</th><th>Plat</th><th>T°</th><th>Heure</th><th>Conf.</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        let rows = cuissonItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.plat}</td><td style="font-weight:700">${i.temperature}</td><td>${i.heure || '—'}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px;color:#C7793A">${i.observation || '—'}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
+        body += section('Fin de cuisson', '#E8855A', `<table><thead><tr><th>Date</th><th>Plat</th><th>Température</th><th>Heure</th><th>Conformité</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       // Service
-      const serviceItems = entries.filter(e => e.type === 'tempService').flatMap(e => (e.data?.dataService || []).map(i => ({ ...i, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' })));
+      const serviceItems = entries.filter(e => e.type === 'tempService').flatMap(e => (e.data?.dataService || []).map(i => {
+        let conf = i.conforme;
+        if (conf === undefined || conf === null) {
+          const t = parseFloat((i.temperature || '').replace('°C', '').replace(',', '.'));
+          if (!isNaN(t)) conf = i.type === 'chaud' ? t >= 63 : t <= 3;
+        }
+        return { ...i, conforme: conf, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' };
+      }));
       if (serviceItems.length > 0) {
-        let rows = serviceItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.type === 'chaud' ? '🔥' : '❄'} ${i.plat}</td><td>${i.periode}</td><td style="font-weight:700">${i.temperature}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
-        body += section('Contrôle au service', '#C49A3C', `<table><thead><tr><th>Date</th><th>Plat</th><th>Période</th><th>T°</th><th>Conf.</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        let rows = serviceItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.type === 'chaud' ? '🔥' : '❄'} ${i.plat}</td><td>${i.periode}</td><td style="font-weight:700">${i.temperature}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px;color:#C7793A">${i.observation || '—'}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
+        body += section('Contrôle au service', '#C49A3C', `<table><thead><tr><th>Date</th><th>Plat</th><th>Période</th><th>Température</th><th>Conformité</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       // Cellule
-      const celluleItems = entries.filter(e => e.type === 'cellule').flatMap(e => (e.data?.dataCellule || []).map(i => ({ ...i, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' })));
+      const celluleItems = entries.filter(e => e.type === 'cellule').flatMap(e => (e.data?.dataCellule || []).map(i => {
+        let conf = i.conforme;
+        if (conf === undefined || conf === null) {
+          const t = parseFloat((i.tempSortie || '').replace('°C', '').replace(',', '.'));
+          conf = !isNaN(t) ? t <= 10 : undefined;
+        }
+        return { ...i, conforme: conf, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' };
+      }));
       if (celluleItems.length > 0) {
-        let rows = celluleItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.plat}</td><td>${i.tempEntree} → ${i.tempSortie}</td><td>${i.duree}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
-        body += section('Cellule refroidissement', '#0097A7', `<table><thead><tr><th>Date</th><th>Plat</th><th>T° entrée → sortie</th><th>Durée</th><th>Conf.</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        let rows = celluleItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.plat}</td><td>${i.tempEntree} → ${i.tempSortie}</td><td>${i.duree}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px;color:#C7793A">${i.observation || '—'}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
+        body += section('Cellule refroidissement', '#0097A7', `<table><thead><tr><th>Date</th><th>Plat</th><th>Température entrée → sortie</th><th>Durée</th><th>Conformité</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       // Livraison — grouper départ + arrivée
-      const livraisonItems = entries.filter(e => e.type === 'livraison').flatMap(e => (e.data?.dataLivraison || []).map(i => ({ ...i, _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' })));
+      const livraisonItems = entries.filter(e => e.type === 'livraison').flatMap(e => (e.data?.dataLivraison || []).map(i => {
+        let conf = i.conforme;
+        if (conf === undefined || conf === null) {
+          const t = parseFloat((i.temperature || '').replace('°C', '').replace(',', '.'));
+          if (!isNaN(t)) conf = i.typeTemp === 'chaud' ? t >= 63 : t <= 3;
+        }
+        return { ...i, conforme: conf, _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' };
+      }));
       if (livraisonItems.length > 0) {
         const departs = livraisonItems.filter(i => i.direction === 'Départ');
         const arrivees = livraisonItems.filter(i => i.direction === 'Arrivée');
@@ -307,74 +335,145 @@ export default function Overview({ auth, etab, onNavigate }) {
           const arrIdx = arrivees.findIndex((arr, i) => !matched.has(i) && arr.produit === dep.produit && arr.tempDepart === dep.temperature);
           const arr = arrIdx >= 0 ? arrivees[arrIdx] : null;
           if (arrIdx >= 0) matched.add(arrIdx);
-          rows += `<tr><td>${dep.typeTemp === 'chaud' ? '🔥' : '❄'} ${dep.produit}</td><td>${dep.site}</td><td style="font-weight:700">${dep.temperature}</td><td>${dep.heure}</td><td>${dep._by}</td><td>${arr?.site || '—'}</td><td style="font-weight:700">${arr?.temperature || '—'}</td><td>${arr?.heure || '—'}</td><td>${arr ? confCell(arr.conforme) : '—'}</td><td>${arr?._by || '—'}</td></tr>`;
+          rows += `<tr><td>${dep.typeTemp === 'chaud' ? '🔥' : '❄'} ${dep.produit}</td><td>${dep.site}</td><td style="font-weight:700">${dep.temperature}</td><td>${dep.heure}</td><td>${dep._by}</td><td>${arr?.site || '—'}</td><td style="font-weight:700">${arr?.temperature || '—'}</td><td>${arr?.heure || '—'}</td><td>${arr ? confCell(arr.conforme) : '—'}</td><td>${arr?._by || '—'}</td><td style="font-size:9px;color:#C7793A">${arr?.observation || dep.observation || '—'}</td></tr>`;
         });
         arrivees.forEach((arr, i) => {
           if (matched.has(i)) return;
-          rows += `<tr><td>${arr.typeTemp === 'chaud' ? '🔥' : '❄'} ${arr.produit}</td><td>${arr.siteDepart || '—'}</td><td>${arr.tempDepart || '—'}</td><td>${arr.heureDepart || '—'}</td><td>—</td><td>${arr.site}</td><td style="font-weight:700">${arr.temperature}</td><td>${arr.heure}</td><td>${confCell(arr.conforme)}</td><td>${arr._by}</td></tr>`;
+          rows += `<tr><td>${arr.typeTemp === 'chaud' ? '🔥' : '❄'} ${arr.produit}</td><td>${arr.siteDepart || '—'}</td><td>${arr.tempDepart || '—'}</td><td>${arr.heureDepart || '—'}</td><td>—</td><td>${arr.site}</td><td style="font-weight:700">${arr.temperature}</td><td>${arr.heure}</td><td>${confCell(arr.conforme)}</td><td>${arr._by}</td><td style="font-size:9px;color:#C7793A">${arr.observation || '—'}</td></tr>`;
         });
-        body += section('Départ / Arrivée', '#689F38', `<table><thead><tr><th>Produit</th><th colspan="4" style="background:#689F38;color:#fff;text-align:center">DÉPART</th><th colspan="5" style="background:#558B2F;color:#fff;text-align:center">ARRIVÉE</th></tr><tr><th></th><th>Site</th><th>T°</th><th>Heure</th><th>Par</th><th>Site</th><th>T°</th><th>Heure</th><th>Conf.</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        body += section('Départ / Arrivée', '#689F38', `<table><thead><tr><th>Produit</th><th colspan="4" style="background:#689F38;color:#fff;text-align:center">DÉPART</th><th colspan="5" style="background:#558B2F;color:#fff;text-align:center">ARRIVÉE</th><th>Observation</th></tr><tr><th></th><th>Site</th><th>Température</th><th>Heure</th><th>Opérateur</th><th>Site</th><th>Température</th><th>Heure</th><th>Conformité</th><th>Opérateur</th><th></th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       // Huile
-      const oilItems = entries.filter(e => e.type === 'oilTest').flatMap(e => (e.data?.dataOil || []).map(i => ({ ...i, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' })));
+      const oilItems = entries.filter(e => e.type === 'oilTest').flatMap(e => (e.data?.dataOil || []).map(i => {
+        let conf = i.conforme;
+        if (conf === undefined || conf === null) {
+          const t = parseFloat((i.tpc || '').replace('%', '').replace(',', '.'));
+          conf = !isNaN(t) ? t <= 25 : undefined;
+        }
+        return { ...i, conforme: conf, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' };
+      }));
       if (oilItems.length > 0) {
-        let rows = oilItems.map(i => `<tr><td>${i._date}</td><td>${i.friteuse}</td><td style="font-weight:700">${i.tpc}</td><td>${confCell(i.conforme)}</td><td>${i.action}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
-        body += section('Test huile', '#A0742D', `<table><thead><tr><th>Date</th><th>Friteuse</th><th>Résultat</th><th>Conf.</th><th>Action</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        let rows = oilItems.map(i => `<tr><td>${i._date}</td><td>${i.friteuse}</td><td style="font-weight:700">${i.tpc}</td><td>${confCell(i.conforme)}</td><td>${i.action}</td><td style="font-size:9px;color:#C7793A">${i.observation || '—'}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
+        body += section('Test huile', '#A0742D', `<table><thead><tr><th>Date</th><th>Friteuse</th><th>Résultat</th><th>Conformité</th><th>Action</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       // Étalonnage
-      const etalItems = entries.filter(e => e.type === 'etalonnage').flatMap(e => (e.data?.dataEtalonnage || []).map(i => ({ ...i, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' })));
+      const etalItems = entries.filter(e => e.type === 'etalonnage').flatMap(e => (e.data?.dataEtalonnage || []).map(i => {
+        let conf = i.conforme;
+        if (conf === undefined || conf === null) {
+          const ecart = parseFloat((i.ecart || '').replace('°C', '').replace(',', '.'));
+          conf = !isNaN(ecart) ? Math.abs(ecart) <= 1 : undefined;
+        }
+        return { ...i, conforme: conf, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' };
+      }));
       if (etalItems.length > 0) {
-        let rows = etalItems.map(i => `<tr><td>${i._date}</td><td>${i.sonde}</td><td>${i.reference}</td><td style="font-weight:700">${i.mesure}</td><td>${i.ecart}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
-        body += section('Étalonnage', '#5C6BC0', `<table><thead><tr><th>Date</th><th>Sonde</th><th>Réf.</th><th>Mesure</th><th>Écart</th><th>Conf.</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        let rows = etalItems.map(i => `<tr><td>${i._date}</td><td>${i.sonde}</td><td>${i.reference}</td><td style="font-weight:700">${i.mesure}</td><td>${i.ecart}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px;color:#C7793A">${i.observation || '—'}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
+        body += section('Étalonnage', '#5C6BC0', `<table><thead><tr><th>Date</th><th>Sonde</th><th>Référence</th><th>Mesure</th><th>Écart</th><th>Conformité</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       // Camion
       const camionEntries = entries.filter(e => e.type === 'nettoyageCamion');
       if (camionEntries.length > 0) {
         let rows = camionEntries.map(e => `<tr><td>${new Date(e.createdAt).toLocaleDateString('fr-FR')}</td><td>${e.data?.camion || '—'}</td><td>${(e.data?.items || []).join(', ')}</td><td style="font-size:9px">${e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : ''}</td></tr>`).join('');
-        body += section('Nettoyage camion', '#546E7A', `<table><thead><tr><th>Date</th><th>Camion</th><th>Éléments</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        body += section('Nettoyage camion', '#546E7A', `<table><thead><tr><th>Date</th><th>Camion</th><th>Éléments nettoyés</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
-      // Nettoyage
+      // Nettoyage — groupé par date
       const cleanEntries = entries.filter(e => e.type === 'cleaning');
       if (cleanEntries.length > 0) {
-        let rows = '';
+        const byDate = {};
         cleanEntries.forEach(e => {
-          const c = e.data?.cleaning;
-          if (!c) return;
-          Object.entries(c).filter(([k]) => k !== 'observation' && k !== '_id').forEach(([zone, tasks]) => {
-            if (!Array.isArray(tasks) || tasks.length === 0) return;
-            rows += `<tr><td style="font-weight:600">${zone}</td><td>${tasks.join(', ')}</td><td style="font-size:9px">${e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : ''}</td></tr>`;
-          });
+          const dateKey = new Date(e.createdAt).toLocaleDateString('fr-FR');
+          if (!byDate[dateKey]) byDate[dateKey] = [];
+          byDate[dateKey].push(e);
         });
-        if (rows) body += section('Plan de nettoyage', '#26A69A', `<table><thead><tr><th>Zone</th><th>Tâches réalisées</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        let content = '';
+        Object.entries(byDate).forEach(([date, dayEntries]) => {
+          const zoneMap = {};
+          const zoneBy = {};
+          dayEntries.forEach(e => {
+            const c = e.data?.cleaning;
+            if (!c) return;
+            const by = e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '';
+            Object.entries(c).filter(([k]) => k !== 'observation' && k !== '_id').forEach(([zone, tasks]) => {
+              if (!Array.isArray(tasks) || tasks.length === 0) return;
+              if (!zoneMap[zone]) { zoneMap[zone] = new Set(); zoneBy[zone] = new Set(); }
+              tasks.forEach(t => zoneMap[zone].add(t));
+              if (by) zoneBy[zone].add(by);
+            });
+          });
+          let rows = '';
+          Object.entries(zoneMap).forEach(([zone, tasks]) => {
+            rows += `<tr><td style="font-weight:600;vertical-align:middle">${zone}</td><td style="vertical-align:middle">${[...tasks].join(', ')}</td><td style="font-size:9px;vertical-align:middle">${[...zoneBy[zone]].join(', ')}</td></tr>`;
+          });
+          if (rows) content += `<div style="margin-bottom:14px;"><div style="font-weight:700;font-size:11px;color:#26A69A;margin-bottom:4px;">📅 ${date}</div><table style="table-layout:fixed;"><colgroup><col style="width:10%"/><col style="width:75%"/><col style="width:15%"/></colgroup><thead><tr><th>Zone</th><th>Tâches réalisées</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        });
+        if (content) body += section('Plan de nettoyage', '#26A69A', content);
       }
 
-      // Étiquettes / DLC
+      // Étiquettes / DLC — groupé par date
       const labelEntries = entries.filter(e => e.type === 'label');
       if (labelEntries.length > 0) {
-        const allPhotos = labelEntries.flatMap(e => (e.data?.photos || []).map(p => ({ url: p.url || p, date: new Date(e.createdAt).toLocaleDateString('fr-FR'), by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' })));
-        if (allPhotos.length > 0) {
-          let imgs = allPhotos.map(p => `<div style="display:inline-block;text-align:center;margin:4px;"><img src="${p.url}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;" /><div style="font-size:8px;color:#888;">${p.date}</div></div>`).join('');
-          body += section('Étiquettes / Traçabilité DLC', '#C7793A', `<p style="font-size:10px;margin-bottom:8px;">${allPhotos.length} photo(s) — preuve de traçabilité produits</p>${imgs}`);
+        const byDate = {};
+        labelEntries.forEach(e => {
+          const dateKey = new Date(e.createdAt).toLocaleDateString('fr-FR');
+          if (!byDate[dateKey]) byDate[dateKey] = [];
+          (e.data?.photos || []).forEach(p => {
+            byDate[dateKey].push({ url: p.url || p, by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' });
+          });
+        });
+        const totalPhotos = Object.values(byDate).reduce((s, arr) => s + arr.length, 0);
+        if (totalPhotos > 0) {
+          let content = `<p style="font-size:10px;margin-bottom:8px;">${totalPhotos} photo(s) — preuve de traçabilité produits</p>`;
+          Object.entries(byDate).forEach(([date, photos]) => {
+            const urls = photos.map(p => p.url);
+            const imgs = photos.map((p, pi) => `<div style="display:inline-block;text-align:center;margin:4px;"><img src="${p.url}" data-group='${JSON.stringify(urls)}' data-idx="${pi}" onclick="openLb(JSON.parse(this.dataset.group),+this.dataset.idx)" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;cursor:pointer;" /><div style="font-size:8px;color:#888;">${p.by}</div></div>`).join('');
+            content += `<div style="margin-bottom:14px;"><div style="font-weight:700;font-size:11px;color:#C7793A;margin-bottom:4px;">📅 ${date}</div>${imgs}</div>`;
+          });
+          body += section('Étiquettes / Traçabilité DLC', '#C7793A', content);
         }
       }
 
-      // Réception marchandise
+      // Réception marchandise — groupé par réception
       const receptionEntries = entries.filter(e => e.type === 'controleReception');
       if (receptionEntries.length > 0) {
-        let rows = '';
+        let content = '';
         receptionEntries.forEach(e => {
           const d2 = e.data;
           const date = new Date(e.createdAt).toLocaleDateString('fr-FR');
+          const heure = new Date(e.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
           const by = e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '';
-          (d2?.items || []).forEach(item => {
-            rows += `<tr><td style="font-size:9px">${date}</td><td>${d2.fournisseur}</td><td>${d2.etatCamion}</td><td>${d2.tempCamion || '—'}°C</td><td>${item.nomProduit || '—'}</td><td>${item.temperature || '—'}°C</td><td>${item.dlc || '—'}</td><td style="font-size:9px">${by}</td></tr>`;
+          const items = d2?.items || [];
+          let prodRows = '';
+          const allPhotos = items.flatMap(item => item.photos || []);
+          items.forEach(item => {
+            const photoUrls = item.photos || [];
+            const photos = photoUrls.map((url, pi) => `<img src="${url}" data-group='${JSON.stringify(allPhotos)}' data-idx="${allPhotos.indexOf(url)}" onclick="openLb(JSON.parse(this.dataset.group),+this.dataset.idx)" style="width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #ddd;cursor:pointer;" />`).join(' ');
+            const prodName = item.nomProduit || (photoUrls.length > 0 ? 'Voir l\'image' : '—');
+            const isCfTemoin = (item.temperature || '').includes('témoin');
+            const tempDisplay = isCfTemoin ? '<span style="color:#2D6A4F;font-style:italic;">cf. témoin</span>' : `${item.temperature || '—'}°C`;
+            const lot = item.lotVisible ? 'Visible ✓' : (item.numeroDuLot || '—');
+            prodRows += `<tr><td style="vertical-align:middle">${prodName}</td><td style="font-weight:700;vertical-align:middle">${tempDisplay}</td><td style="vertical-align:middle">${item.dlc || '—'}</td><td style="vertical-align:middle">${lot}</td><td style="vertical-align:middle">${photos || '—'}</td></tr>`;
           });
+          content += `<div style="margin-bottom:16px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
+            <div style="background:#EAF4EC;padding:8px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                <span style="font-weight:700;color:#2D6A4F;">📅 ${date} à ${heure} — ${d2.fournisseur}</span>
+                <span style="font-size:9px;color:#666;">Opérateur : ${by}</span>
+              </div>
+              <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;margin-top:4px;">
+                <span><strong>État camion :</strong> ${d2.etatCamion || '—'}</span>
+                <span><strong>Température camion :</strong> ${d2.tempCamion || '—'}°C</span>
+                ${d2.numeroBL ? `<span><strong>N° BL :</strong> ${d2.numeroBL}</span>` : ''}
+                ${Array.isArray(d2.photosBL) && d2.photosBL.length > 0 ? `<span><strong>${d2.numeroBL ? 'Photo BL :' : 'BL :'}</strong> ${d2.photosBL.map((url, pi) => `<img src="${url}" data-group='${JSON.stringify(d2.photosBL)}' data-idx="${pi}" onclick="openLb(JSON.parse(this.dataset.group),+this.dataset.idx)" style="width:30px;height:30px;object-fit:cover;border-radius:4px;border:1px solid #ddd;cursor:pointer;vertical-align:middle;margin-left:4px;" />`).join(' ')}</span>` : ''}
+                <span><strong>Produits :</strong> ${items.length}</span>
+              </div>
+            </div>
+            <table style="margin:0;table-layout:fixed;"><colgroup><col style="width:25%"/><col style="width:15%"/><col style="width:15%"/><col style="width:15%"/><col style="width:30%"/></colgroup><thead><tr><th>Produit</th><th>Température</th><th>DLC</th><th>Lot</th><th>Photos</th></tr></thead><tbody>${prodRows}</tbody></table>
+          </div>`;
         });
-        body += section('Réception marchandise', '#2D6A4F', `<table><thead><tr><th>Date</th><th>Fournisseur</th><th>Camion</th><th>T° camion</th><th>Produit</th><th>T° produit</th><th>DLC</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        body += section('Réception marchandise', '#2D6A4F', content);
       }
 
       // NC fiches
@@ -384,7 +483,7 @@ export default function Overview({ auth, etab, onNavigate }) {
           const d2 = e.data;
           return `<tr style="background:#FFF5F5"><td style="font-size:9px">${new Date(e.createdAt).toLocaleDateString('fr-FR')}</td><td>${d2?.source || '—'}</td><td style="color:#E05C5C;font-weight:700">${d2?.typeNC || '—'}</td><td>${d2?.produit || '—'}</td><td style="font-weight:700">${d2?.valeur || '—'}</td><td>${d2?.seuil || '—'}</td><td>${d2?.actionCorrective || '—'}</td><td style="font-size:9px;color:#C7793A">${d2?.observations || '—'}</td><td style="font-size:9px">${d2?.responsable || ''}</td></tr>`;
         }).join('');
-        body += section('Fiches de non-conformité', '#C0392B', `<table><thead><tr><th>Date</th><th>Source</th><th>Type NC</th><th>Produit</th><th>Valeur</th><th>Seuil</th><th>Action</th><th>Obs.</th><th>Par</th></tr></thead><tbody>${rows}</tbody></table>`);
+        body += section('Fiches de non-conformité', '#C0392B', `<table><thead><tr><th>Date</th><th>Source</th><th>Type NC</th><th>Produit / Objet</th><th>Valeur</th><th>Seuil</th><th>Action corrective</th><th>Description</th><th>Responsable</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       body += '</div></div>';
@@ -403,12 +502,35 @@ export default function Overview({ auth, etab, onNavigate }) {
       .logo { text-align: center; margin-bottom: 8px; }
       .logo span { font-size: 28px; font-weight: 700; color: #2D6A4F; }
       .logo .safe { color: #4CAF50; }
+      .lb-overlay { display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:9999;justify-content:center;align-items:center;flex-direction:column; }
+      .lb-overlay.active { display:flex; }
+      .lb-img { max-width:90vw;max-height:80vh;object-fit:contain;border-radius:8px; }
+      .lb-close { position:absolute;top:20px;right:30px;color:#fff;font-size:32px;cursor:pointer;font-weight:700;z-index:10000; }
+      .lb-nav { position:absolute;top:50%;transform:translateY(-50%);color:#fff;font-size:40px;cursor:pointer;user-select:none;padding:10px 18px;z-index:10000; }
+      .lb-prev { left:20px; }
+      .lb-next { right:20px; }
+      .lb-counter { color:#fff;font-size:14px;margin-top:12px; }
     </style></head><body>
+    <div class="lb-overlay" id="lightbox" onclick="if(event.target===this)closeLb()">
+      <span class="lb-close" onclick="closeLb()">&times;</span>
+      <span class="lb-nav lb-prev" onclick="navLb(-1)">&#8249;</span>
+      <img class="lb-img" id="lbImg" />
+      <span class="lb-nav lb-next" onclick="navLb(1)">&#8250;</span>
+      <div class="lb-counter" id="lbCounter"></div>
+    </div>
       <div class="logo"><span>Food</span><span class="safe">Safe</span></div>
       <h1>Rapport multi-établissements</h1>
       <p class="subtitle">${dateLabel} — ${pdfEtabs.length} établissement${pdfEtabs.length > 1 ? 's' : ''}</p>
       ${body}
       <div class="footer">Document généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} — FoodSafe</div>
+    <script>
+      var lbPhotos=[], lbIdx=0;
+      function openLb(group,idx){ lbPhotos=group; lbIdx=idx; showLb(); }
+      function showLb(){ document.getElementById('lbImg').src=lbPhotos[lbIdx]; document.getElementById('lbCounter').textContent=(lbIdx+1)+' / '+lbPhotos.length; document.getElementById('lightbox').classList.add('active'); }
+      function closeLb(){ document.getElementById('lightbox').classList.remove('active'); }
+      function navLb(dir){ lbIdx=(lbIdx+dir+lbPhotos.length)%lbPhotos.length; showLb(); }
+      document.addEventListener('keydown',function(e){ if(!document.getElementById('lightbox').classList.contains('active'))return; if(e.key==='Escape')closeLb(); if(e.key==='ArrowLeft')navLb(-1); if(e.key==='ArrowRight')navLb(1); });
+    </script>
     </body></html>`;
 
     const blob = new Blob([html], { type: 'text/html' });
@@ -465,80 +587,115 @@ export default function Overview({ auth, etab, onNavigate }) {
             </div>
           </div>
 
-          {/* Tableau complétion par établissement */}
-          <div className="card" style={{ marginBottom: '20px' }}>
-            <div className="card-header" style={{ background: 'var(--green)' }}>
-              Complétion par établissement
-            </div>
-            <div className="card-body">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Établissement</th>
-                    {DAILY_TYPES.map(t => <th key={t.type}>{t.label}</th>)}
-                    <th>Complétion</th>
-                    <th>NC</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {etabs.map(et => {
-                    const data = allData[et._id];
-                    const entries = data?.entries || [];
-                    const eq = data?.equipement;
-                    const pct = getCompletionPct(entries, eq);
-                    const ncs = getNCs(entries);
-                    const isToday = selectedDate === new Date().toISOString().split('T')[0];
-                    const isAfternoon = new Date().getHours() >= 15;
-                    const missing = DAILY_TYPES.filter(t => getTypeDetail(t.type, entries, eq).done === 0).map(t => t.label);
-                    return (
-                      <React.Fragment key={et._id}>
-                      <tr>
-                        <td><a href="#" onClick={e2 => { e2.preventDefault(); onNavigate('history', et); }} style={{ color: 'var(--green)', fontWeight: '700', textDecoration: 'underline', cursor: 'pointer' }}>{et.nom}</a></td>
-                        {DAILY_TYPES.map(t => {
-                          const stats = getTypeDetail(t.type, entries, eq);
-                          const complete = stats.total > 0 && stats.done >= stats.total;
-                          return (
-                            <td key={t.type}>
-                              {stats.done > 0 ? (
-                                <span className={`badge ${complete ? 'badge-green' : 'badge-gold'}`}>
-                                  {complete ? '✅' : '⏳'} {stats.done}/{stats.total}
-                                </span>
-                              ) : (
-                                <span className="badge badge-gray">0/{stats.total}</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ flex: 1, height: '8px', background: '#eee', borderRadius: '4px', overflow: 'hidden' }}>
-                              <div style={{ width: `${pct}%`, height: '100%', borderRadius: '4px', background: pct === 100 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)' }} />
-                            </div>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: pct === 100 ? 'var(--green)' : pct >= 50 ? '#8D6E00' : 'var(--red)' }}>{pct}%</span>
-                          </div>
-                        </td>
-                        <td>
-                          {ncs.length > 0 ? (
-                            <span className="badge badge-red">{ncs.length} NC</span>
-                          ) : (
-                            <span className="badge badge-green">OK</span>
-                          )}
-                        </td>
-                      </tr>
-                      {isToday && isAfternoon && pct < 100 && missing.length > 0 && (
-                        <tr>
-                          <td colSpan={DAILY_TYPES.length + 3} style={{ background: '#FFF8E1', fontSize: '12px', color: '#8D6E00', padding: '6px 14px', borderLeft: '3px solid #C49A3C' }}>
-                            ⚠️ {missing.join(', ')} — pas encore saisi{missing.length > 1 ? 's' : ''}
-                          </td>
-                        </tr>
-                      )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Complétion par commune / établissement */}
+          {(() => {
+            const communes = {};
+            etabs.forEach(et => {
+              const cName = et.commune?.nom || 'Autre';
+              if (!communes[cName]) communes[cName] = [];
+              communes[cName].push(et);
+            });
+            const multiCommune = Object.keys(communes).length > 1;
+            return Object.entries(communes).map(([cName, cEtabs]) => {
+              const isCommuneOpen = multiCommune ? openCommunes[cName] : true;
+              const communeEntries = cEtabs.flatMap(et => allData[et._id]?.entries || []);
+              const communeNCs = getNCs(communeEntries).length;
+              const communeTotal = communeEntries.length;
+              return (
+                <div key={cName} style={{ marginBottom: '16px' }}>
+                  {multiCommune && (
+                    <div
+                      onClick={() => setOpenCommunes(p => ({ ...p, [cName]: !p[cName] }))}
+                      style={{
+                        background: 'var(--green)', color: '#fff', padding: '14px 20px',
+                        borderRadius: isCommuneOpen ? '14px 14px 0 0' : '14px',
+                        cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        fontWeight: '700', fontSize: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                      }}
+                    >
+                      <span>🏛️ {cName}</span>
+                      <span style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px' }}>
+                        <span style={{ background: 'rgba(255,255,255,0.25)', padding: '2px 10px', borderRadius: '10px' }}>{cEtabs.length} cantine{cEtabs.length > 1 ? 's' : ''}</span>
+                        <span style={{ background: 'rgba(255,255,255,0.25)', padding: '2px 10px', borderRadius: '10px' }}>{communeTotal} enreg.</span>
+                        {communeNCs > 0 && <span style={{ background: 'rgba(255,80,80,0.8)', padding: '2px 10px', borderRadius: '10px' }}>{communeNCs} NC</span>}
+                        <span>{isCommuneOpen ? '▲' : '▼'}</span>
+                      </span>
+                    </div>
+                  )}
+                  {isCommuneOpen && (
+                    <div style={{ background: '#fff', borderRadius: multiCommune ? '0 0 14px 14px' : '14px', padding: '12px', border: '1px solid #e0e0e0', borderTop: multiCommune ? 'none' : undefined }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Établissement</th>
+                            {DAILY_TYPES.map(t => <th key={t.type}>{t.label}</th>)}
+                            <th>Complétion</th>
+                            <th>NC</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cEtabs.map(et => {
+                            const data = allData[et._id];
+                            const entries = data?.entries || [];
+                            const eq = data?.equipement;
+                            const pct = getCompletionPct(entries, eq);
+                            const ncs = getNCs(entries);
+                            const isToday = selectedDate === new Date().toISOString().split('T')[0];
+                            const isAfternoon = new Date().getHours() >= 15;
+                            const missing = DAILY_TYPES.filter(t => getTypeDetail(t.type, entries, eq).done === 0).map(t => t.label);
+                            return (
+                              <React.Fragment key={et._id}>
+                                <tr>
+                                  <td><a href="#" onClick={e2 => { e2.preventDefault(); onNavigate('history', et); }} style={{ color: 'var(--green)', fontWeight: '700', textDecoration: 'underline', cursor: 'pointer' }}>{et.nom}</a></td>
+                                  {DAILY_TYPES.map(t => {
+                                    const stats = getTypeDetail(t.type, entries, eq);
+                                    const complete = stats.total > 0 && stats.done >= stats.total;
+                                    return (
+                                      <td key={t.type}>
+                                        {stats.done > 0 ? (
+                                          <span className={`badge ${complete ? 'badge-green' : 'badge-gold'}`}>
+                                            {complete ? '✅' : '⏳'} {stats.done}/{stats.total}
+                                          </span>
+                                        ) : (
+                                          <span className="badge badge-gray">0/{stats.total}</span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                  <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <div style={{ flex: 1, height: '8px', background: '#eee', borderRadius: '4px', overflow: 'hidden' }}>
+                                        <div style={{ width: `${pct}%`, height: '100%', borderRadius: '4px', background: pct === 100 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)' }} />
+                                      </div>
+                                      <span style={{ fontSize: '13px', fontWeight: '700', color: pct === 100 ? 'var(--green)' : pct >= 50 ? '#8D6E00' : 'var(--red)' }}>{pct}%</span>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    {ncs.length > 0 ? (
+                                      <span className="badge badge-red">{ncs.length} NC</span>
+                                    ) : (
+                                      <span className="badge badge-green">OK</span>
+                                    )}
+                                  </td>
+                                </tr>
+                                {isToday && isAfternoon && pct < 100 && missing.length > 0 && (
+                                  <tr>
+                                    <td colSpan={DAILY_TYPES.length + 3} style={{ background: '#FFF8E1', fontSize: '12px', color: '#8D6E00', padding: '6px 14px', borderLeft: '3px solid #C49A3C' }}>
+                                      ⚠️ {missing.join(', ')} — pas encore saisi{missing.length > 1 ? 's' : ''}
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
 
           {/* Alertes NC */}
           {allNCs.length > 0 && (
@@ -550,22 +707,24 @@ export default function Overview({ auth, etab, onNavigate }) {
                 <table>
                   <thead>
                     <tr>
+                      <th>Date</th>
                       <th>Site</th>
                       <th>Type</th>
                       <th>Produit</th>
                       <th>Valeur</th>
-                      <th>Action</th>
-                      <th>Par</th>
+                      <th>Observation</th>
+                      <th>Opérateur</th>
                     </tr>
                   </thead>
                   <tbody>
                     {allNCs.map((nc, i) => (
                       <tr key={i} className="nc-row">
+                        <td style={{ fontSize: '12px' }}>{nc.date}</td>
                         <td><strong>{nc.site}</strong></td>
                         <td>{nc.type}</td>
                         <td>{nc.produit || '—'}</td>
                         <td style={{ color: 'var(--red)', fontWeight: '700' }}>{nc.valeur || '—'}</td>
-                        <td>{nc.action || '—'}</td>
+                        <td style={{ fontSize: '12px', color: '#C7793A' }}>{nc.observation || '—'}</td>
                         <td style={{ fontSize: '12px' }}>{nc.by}</td>
                       </tr>
                     ))}
@@ -575,87 +734,6 @@ export default function Overview({ auth, etab, onNavigate }) {
             </div>
           )}
 
-          {/* NC non résolues (7 derniers jours) */}
-          {(() => {
-            const recentNCs = Object.values(allData).flatMap(d =>
-              (d.weekEntries || []).filter(e => e.type === 'nonConformite').map(e => ({
-                site: d.nom,
-                date: new Date(e.createdAt).toLocaleDateString('fr-FR'),
-                type: e.data?.typeNC || 'NC',
-                produit: e.data?.produit || '—',
-                valeur: e.data?.valeur || '—',
-                action: e.data?.actionCorrective || '',
-                by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '',
-              }))
-            );
-            return recentNCs.length > 0 && (
-              <div className="card" style={{ marginBottom: '20px' }}>
-                <div className="card-header" style={{ background: '#C0392B' }}>
-                  📋 NC de la semaine
-                </div>
-                <div className="card-body">
-                  <table>
-                    <thead>
-                      <tr><th>Date</th><th>Site</th><th>Type</th><th>Produit</th><th>Valeur</th><th>Action corrective</th><th>Par</th></tr>
-                    </thead>
-                    <tbody>
-                      {recentNCs.map((nc, i) => (
-                        <tr key={i} className="nc-row">
-                          <td style={{ fontSize: '12px' }}>{nc.date}</td>
-                          <td><strong>{nc.site}</strong></td>
-                          <td>{nc.type}</td>
-                          <td>{nc.produit}</td>
-                          <td style={{ color: 'var(--red)', fontWeight: '700' }}>{nc.valeur}</td>
-                          <td>{nc.action || <span style={{ color: 'var(--red)', fontStyle: 'italic' }}>Aucune action</span>}</td>
-                          <td style={{ fontSize: '12px' }}>{nc.by}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Tendances : semaine en cours vs précédente */}
-          {(() => {
-            const thisWeekTotal = Object.values(allData).reduce((s, d) => s + (d.weekEntries?.length || 0), 0);
-            const prevWeekTotal = Object.values(allData).reduce((s, d) => s + (d.prevWeekEntries?.length || 0), 0);
-            const thisWeekNCs = Object.values(allData).reduce((s, d) => s + (d.weekEntries || []).filter(e => entryHasNC(e)).length, 0);
-            const prevWeekNCs = Object.values(allData).reduce((s, d) => s + (d.prevWeekEntries || []).filter(e => entryHasNC(e)).length, 0);
-            const diffEntries = thisWeekTotal - prevWeekTotal;
-            const diffNCs = thisWeekNCs - prevWeekNCs;
-
-            return (
-              <div className="card" style={{ marginBottom: '20px' }}>
-                <div className="card-header" style={{ background: 'var(--blue)' }}>
-                  📈 Tendances
-                </div>
-                <div className="card-body">
-                  <div className="stats-grid">
-                    <div className="stat-card">
-                      <div>
-                        <div className="stat-label">Enregistrements cette semaine</div>
-                        <div className="stat-value">{thisWeekTotal}</div>
-                        <div style={{ fontSize: '12px', color: diffEntries >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: '600' }}>
-                          {diffEntries >= 0 ? '▲' : '▼'} {Math.abs(diffEntries)} vs semaine précédente ({prevWeekTotal})
-                        </div>
-                      </div>
-                    </div>
-                    <div className="stat-card">
-                      <div>
-                        <div className="stat-label">NC cette semaine</div>
-                        <div className="stat-value" style={{ color: thisWeekNCs > 0 ? 'var(--red)' : 'var(--green)' }}>{thisWeekNCs}</div>
-                        <div style={{ fontSize: '12px', color: diffNCs <= 0 ? 'var(--green)' : 'var(--red)', fontWeight: '600' }}>
-                          {diffNCs <= 0 ? '▼' : '▲'} {Math.abs(diffNCs)} vs semaine précédente ({prevWeekNCs})
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
 
         </>
       )}
@@ -671,14 +749,14 @@ export default function Overview({ auth, etab, onNavigate }) {
               {etabs.map(et => <option key={et._id} value={et._id}>{et.nom}</option>)}
             </select>
             <label>Du</label>
-            <input type="date" value={exportStart} onChange={e => setExportStart(e.target.value)} max={new Date().toISOString().split('T')[0]} />
+            <input type="date" value={exportStart} onChange={e => { setExportStart(e.target.value); setExportPreset(''); }} max={new Date().toISOString().split('T')[0]} />
             <label>Au</label>
-            <input type="date" value={exportEnd} onChange={e => setExportEnd(e.target.value)} min={exportStart} max={new Date().toISOString().split('T')[0]} />
+            <input type="date" value={exportEnd} onChange={e => { setExportEnd(e.target.value); setExportPreset(''); }} min={exportStart} max={new Date().toISOString().split('T')[0]} />
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-              <button className="btn btn-outline" onClick={() => { const t = new Date().toISOString().split('T')[0]; setExportStart(t); setExportEnd(t); }}>Aujourd'hui</button>
-              <button className="btn btn-outline" onClick={() => { const d = new Date(); const s = new Date(d); s.setDate(s.getDate() - 6); setExportStart(s.toISOString().split('T')[0]); setExportEnd(d.toISOString().split('T')[0]); }}>7 derniers jours</button>
-              <button className="btn btn-outline" onClick={() => { const d = new Date(); setExportStart(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]); setExportEnd(d.toISOString().split('T')[0]); }}>Ce mois</button>
-              <button className="btn btn-outline" onClick={() => { const d = new Date(); const s = new Date(d.getFullYear(), d.getMonth() - 1, 1); const e = new Date(d.getFullYear(), d.getMonth(), 0); setExportStart(s.toISOString().split('T')[0]); setExportEnd(e.toISOString().split('T')[0]); }}>Mois précédent</button>
+              <button className={exportPreset === 'today' ? 'btn btn-green' : 'btn btn-outline'} onClick={() => { const t = new Date().toISOString().split('T')[0]; setExportStart(t); setExportEnd(t); setExportPreset('today'); }}>Aujourd'hui</button>
+              <button className={exportPreset === '7days' ? 'btn btn-green' : 'btn btn-outline'} onClick={() => { const d = new Date(); const s = new Date(d); s.setDate(s.getDate() - 6); setExportStart(s.toISOString().split('T')[0]); setExportEnd(d.toISOString().split('T')[0]); setExportPreset('7days'); }}>7 derniers jours</button>
+              <button className={exportPreset === 'month' ? 'btn btn-green' : 'btn btn-outline'} onClick={() => { const d = new Date(); setExportStart(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]); setExportEnd(d.toISOString().split('T')[0]); setExportPreset('month'); }}>Ce mois</button>
+              <button className={exportPreset === 'prevMonth' ? 'btn btn-green' : 'btn btn-outline'} onClick={() => { const d = new Date(); const s = new Date(d.getFullYear(), d.getMonth() - 1, 1); const e = new Date(d.getFullYear(), d.getMonth(), 0); setExportStart(s.toISOString().split('T')[0]); setExportEnd(e.toISOString().split('T')[0]); setExportPreset('prevMonth'); }}>Mois précédent</button>
             </div>
             <div className="modal-actions">
               <button className="btn btn-outline" onClick={() => setShowExportModal(false)}>Annuler</button>

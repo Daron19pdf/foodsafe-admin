@@ -135,16 +135,21 @@ function renderItems(entry) {
   }
 
   if (entry.type === 'controleReception') {
+    const allReceptionPhotos = [...(d.photosBL || []), ...(d.items || []).flatMap(item => item.photos || [])];
     return (
       <div>
         <div><strong>Fournisseur :</strong> {d.fournisseur}</div>
         <div>Camion : {d.etatCamion} — {d.tempCamion}°C</div>
         {d.photosBL?.length > 0 && (
           <div style={{ display: 'flex', gap: '6px', margin: '8px 0' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', alignSelf: 'center' }}>BL :</span>
             {d.photosBL.map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                <img src={url} alt={`BL ${i+1}`} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #ddd' }} />
-              </a>
+              <img key={i} src={url} alt={`BL ${i+1}`}
+                onClick={() => { setViewerPhotos(allReceptionPhotos); setViewerStart(i); }}
+                style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #ddd', cursor: 'pointer' }}
+                onMouseOver={e => e.target.style.transform = 'scale(1.05)'}
+                onMouseOut={e => e.target.style.transform = 'scale(1)'}
+              />
             ))}
           </div>
         )}
@@ -153,11 +158,17 @@ function renderItems(entry) {
             <div>• <strong>{item.nomProduit || 'Produit'}</strong> — {item.temperature}°C — DLC: {item.dlc}</div>
             {item.photos?.length > 0 && (
               <div style={{ display: 'flex', gap: '4px', marginTop: '4px', marginLeft: '12px' }}>
-                {item.photos.map((url, j) => (
-                  <a key={j} href={url} target="_blank" rel="noopener noreferrer">
-                    <img src={url} alt={`Produit ${i+1}`} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
-                  </a>
-                ))}
+                {item.photos.map((url, j) => {
+                  const idx = (d.photosBL?.length || 0) + (d.items || []).slice(0, i).reduce((s, it) => s + (it.photos?.length || 0), 0) + j;
+                  return (
+                    <img key={j} src={url} alt={`Produit ${i+1}`}
+                      onClick={() => { setViewerPhotos(allReceptionPhotos); setViewerStart(idx); }}
+                      style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd', cursor: 'pointer' }}
+                      onMouseOver={e => e.target.style.transform = 'scale(1.05)'}
+                      onMouseOut={e => e.target.style.transform = 'scale(1)'}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -197,28 +208,37 @@ function PhotoViewer({ photos, startIndex, onClose }) {
   );
 }
 
-export default function History({ auth, etab }) {
+export default function History({ auth, etab, onChangeEtab }) {
   const today = new Date().toISOString().split('T')[0];
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
-  const [entries, setEntries] = useState([]);
+  const [allData, setAllData] = useState({});
   const [loading, setLoading] = useState(false);
+  const [openEtabs, setOpenEtabs] = useState({});
   const [openSections, setOpenSections] = useState({});
   const [viewerPhotos, setViewerPhotos] = useState(null);
   const [viewerStart, setViewerStart] = useState(0);
 
+  const etabs = auth.etablissements || [];
+
   const fetchData = () => {
-    if (!etab?._id) return;
     setLoading(true);
-    getSaveData(auth.token, etab._id, startDate, endDate).then(data => {
-      setEntries(data.result ? data.data : []);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    fetch(`https://haccp3-0-backend.vercel.app/saveData/history?startDate=${startDate}&endDate=${endDate}`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (json.result) {
+          const map = {};
+          json.data.forEach(r => { map[r.id] = r; });
+          setAllData(map);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   };
 
-  useEffect(() => { fetchData(); }, [etab?._id, startDate, endDate]);
-
-  const entriesByType = (type) => entries.filter(e => e.type === type);
+  useEffect(() => { fetchData(); }, [startDate, endDate]);
 
   const renderMerged = (type, list) => {
     if (type === 'label') {
@@ -252,7 +272,58 @@ export default function History({ auth, etab }) {
       ));
     }
 
-    if (type === 'nettoyageCamion' || type === 'nonConformite' || type === 'controleReception') {
+    if (type === 'controleReception') {
+      return list.map(entry => {
+        const d = entry.data;
+        if (!d) return null;
+        const allPhotos = [...(d.photosBL || []), ...(d.items || []).flatMap(item => item.photos || [])];
+        return (
+          <div key={entry._id} style={{ background: '#f9f9f9', borderRadius: '10px', padding: '12px', marginBottom: '10px', border: '1px solid #e0e0e0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <strong>{d.fournisseur}</strong>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{fmtDate(entry.createdAt)} {fmtTime(entry.createdAt)} — {who(entry)}</span>
+            </div>
+            <div style={{ fontSize: '13px', marginBottom: '8px' }}>Camion : {d.etatCamion} — {d.tempCamion}°C</div>
+            {d.photosBL?.length > 0 && (
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>BL :</span>
+                {d.photosBL.map((url, i) => (
+                  <img key={i} src={url} alt="" onClick={() => { setViewerPhotos(allPhotos); setViewerStart(i); }}
+                    style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #ddd', cursor: 'pointer' }} />
+                ))}
+              </div>
+            )}
+            {d.numeroBL && <div style={{ fontSize: '12px', marginBottom: '6px' }}>N° BL : <strong>{d.numeroBL}</strong></div>}
+            <table>
+              <thead><tr><th>Produit</th><th>T°</th><th>DLC</th><th>Lot</th><th>Photos</th></tr></thead>
+              <tbody>
+                {(d.items || []).map((item, i) => (
+                  <tr key={i}>
+                    <td><strong>{item.nomProduit || '—'}</strong></td>
+                    <td>{item.temperature || '—'}°C</td>
+                    <td>{item.dlc || '—'}</td>
+                    <td style={{ fontSize: '11px' }}>{item.lot || '—'}</td>
+                    <td>
+                      {item.photos?.length > 0 ? (
+                        <div style={{ display: 'flex', gap: '3px' }}>
+                          {item.photos.map((url, j) => {
+                            const idx = (d.photosBL?.length || 0) + (d.items || []).slice(0, i).reduce((s, it) => s + (it.photos?.length || 0), 0) + j;
+                            return <img key={j} src={url} alt="" onClick={() => { setViewerPhotos(allPhotos); setViewerStart(idx); }}
+                              style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd', cursor: 'pointer' }} />;
+                          })}
+                        </div>
+                      ) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      });
+    }
+
+    if (type === 'nettoyageCamion' || type === 'nonConformite') {
       return list.map(entry => (
         <div key={entry._id} style={{ background: hasNC(entry) ? '#FFF5F5' : 'var(--green-light)', borderRadius: '10px', padding: '12px', marginBottom: '8px', borderLeft: hasNC(entry) ? '4px solid var(--red)' : 'none' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
@@ -264,7 +335,7 @@ export default function History({ auth, etab }) {
       ));
     }
 
-    // Types avec dataArrays : fusionner dans un seul tableau
+    // Types avec dataArrays : tableaux adaptés par type
     const dataKey = { tempFridge: 'dataTemp', tempCuisson: 'dataCuisson', cellule: 'dataCellule', tempService: 'dataService', livraison: 'dataLivraison', oilTest: 'dataOil', etalonnage: 'dataEtalonnage' }[type];
     if (!dataKey) return null;
 
@@ -274,50 +345,51 @@ export default function History({ auth, etab }) {
 
     if (allRows.length === 0) return <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Aucune donnée</p>;
 
+    const headers = {
+      tempFridge: ['Date', 'Heure', 'Équipement', 'Période', 'T°', 'Conf.', 'Observation', 'Par'],
+      tempCuisson: ['Date', 'Heure', 'Plat', 'T°', 'Conf.', 'Observation', 'Par'],
+      cellule: ['Date', 'Plat', 'T° entrée', 'T° sortie', 'Durée', 'Conf.', 'Observation', 'Par'],
+      tempService: ['Date', 'Heure', 'Type', 'Plat', 'Période', 'T°', 'Conf.', 'Par'],
+      livraison: ['Date', 'Direction', 'Type', 'Produit', 'Site', 'T°', 'Conf.', 'Observation', 'Par'],
+      oilTest: ['Date', 'Heure', 'Friteuse', 'Résultat', 'Action', 'Conf.', 'Observation', 'Par'],
+      etalonnage: ['Date', 'Heure', 'Sonde', 'Référence', 'Mesure', 'Écart', 'Conf.', 'Observation', 'Par'],
+    };
+
+    const renderRow = {
+      tempFridge: (item) => [item._date, item._time || item.heure || '—', item.fridge, item.period, item.temperature, item.conforme, item.observation, item._by],
+      tempCuisson: (item) => [item._date, item._time || item.heure || '—', item.plat, item.temperature, item.conforme, item.observation, item._by],
+      cellule: (item) => [item._date, item.plat, item.tempEntree, item.tempSortie, item.duree, item.conforme, item.observation, item._by],
+      tempService: (item) => [item._date, item._time || item.heure || '—', item.type === 'chaud' ? '🔥 Chaud' : '❄ Froid', item.plat, item.periode, item.temperature, item.conforme, item._by],
+      livraison: (item) => [item._date, item.direction, item.typeTemp === 'chaud' ? '🔥' : '❄', item.produit, item.site, item.temperature, item.conforme, item.observation, item._by],
+      oilTest: (item) => [item._date, item._time || item.heure || '—', item.friteuse, item.tpc, item.action, item.conforme, item.observation, item._by],
+      etalonnage: (item) => [item._date, item._time || item.heure || '—', item.sonde, item.reference, item.mesure, item.ecart, item.conforme, item.observation, item._by],
+    };
+
+    const cols = headers[type] || [];
+    const rowFn = renderRow[type];
+    if (!rowFn) return null;
+
     return (
       <div className="table-wrap">
-        <table style={{ tableLayout: 'fixed', width: '100%' }}>
-          <colgroup>
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '8%' }} />
-            <col style={{ width: '20%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '13%' }} />
-            <col style={{ width: '7%' }} />
-            <col style={{ width: '15%' }} />
-            <col style={{ width: '13%' }} />
-          </colgroup>
+        <table>
           <thead>
-            <tr>
-              <th>Date</th>
-              <th>Heure</th>
-              <th>Élément</th>
-              <th>Valeur</th>
-              <th>Détail</th>
-              <th>Conf.</th>
-              <th>Observation</th>
-              <th>Par</th>
-            </tr>
+            <tr>{cols.map((h, i) => <th key={i}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {allRows.map((item, i) => (
-              <tr key={i} className={item.conforme === false ? 'nc-row' : ''}>
-                <td style={{ fontSize: '12px' }}>{item._date}</td>
-                <td style={{ fontSize: '12px' }}>{item._time || item.heure || '—'}</td>
-                <td><strong>{item.plat || item.fridge || item.friteuse || item.sonde || item.produit || '—'}</strong></td>
-                <td><strong>{item.temperature || item.tpc || item.mesure || item.tempEntree || '—'}</strong></td>
-                <td style={{ fontSize: '12px' }}>{item.period || item.periode || item.direction || item.action || item.duree || '—'}</td>
-                <td>
-                  {item.conforme !== undefined && (
-                    <span className={item.conforme ? 'c-badge' : 'nc-badge'}>
-                      {item.conforme ? '✅' : '❌'}
-                    </span>
-                  )}
-                </td>
-                <td style={{ fontSize: '11px', color: '#C7793A', wordBreak: 'break-word' }}>{item.observation || '—'}</td>
-                <td style={{ fontSize: '11px' }}>{item._by}</td>
-              </tr>
-            ))}
+            {allRows.map((item, i) => {
+              const cells = rowFn(item);
+              return (
+                <tr key={i} className={item.conforme === false ? 'nc-row' : ''}>
+                  {cells.map((cell, j) => {
+                    if (cell === true) return <td key={j}><span className="c-badge">✅</span></td>;
+                    if (cell === false) return <td key={j}><span className="nc-badge">❌</span></td>;
+                    if (cell === undefined || cell === null) return <td key={j}>—</td>;
+                    const isObs = cols[j] === 'Observation';
+                    return <td key={j} style={isObs ? { fontSize: '11px', color: '#C7793A', wordBreak: 'break-word' } : {}}>{cell || '—'}</td>;
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -327,7 +399,7 @@ export default function History({ auth, etab }) {
   return (
     <div>
       <div className="page-header">
-        <h1>Historique HACCP — {etab?.nom || ''}</h1>
+        <h1>Historique HACCP</h1>
       </div>
 
       <div className="date-bar">
@@ -335,47 +407,96 @@ export default function History({ auth, etab }) {
         <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} max={today} />
         <label>au</label>
         <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} min={startDate} max={today} />
-        <button className="btn btn-outline" onClick={fetchData}>Actualiser</button>
       </div>
 
       {loading ? <p>Chargement...</p> : (
-        SECTIONS.map(({ type, label, color }) => {
-          const list = entriesByType(type);
-          const isOpen = openSections[type];
-          const ncInSection = list.filter(hasNC).length;
+        (() => {
+          const communes = {};
+          etabs.forEach(et => {
+            const cName = et.commune?.nom || 'Autre';
+            if (!communes[cName]) communes[cName] = [];
+            communes[cName].push(et);
+          });
+          return Object.entries(communes).map(([cName, cEtabs]) => (
+            <div key={cName}>
+              {Object.keys(communes).length > 1 && (
+                <div style={{ background: '#EAF4EC', padding: '10px 16px', borderRadius: '10px', marginBottom: '12px', marginTop: '8px' }}>
+                  <span style={{ fontWeight: '700', color: 'var(--green)', fontSize: '15px' }}>🏛️ {cName}</span>
+                </div>
+              )}
+              {cEtabs.map(et => {
+          const data = allData[et._id];
+          const entries = data?.entries || [];
+          const isEtabOpen = openEtabs[et._id];
+          const totalEntries = entries.length;
+          const totalNCs = entries.filter(hasNC).length;
+
           return (
-            <div key={type} className="card" style={{ marginBottom: '12px' }}>
+            <div key={et._id} style={{ marginBottom: '16px' }}>
               <div
-                className="card-header"
-                style={{ background: color, cursor: 'pointer' }}
-                onClick={() => setOpenSections(p => ({ ...p, [type]: !p[type] }))}
+                onClick={() => setOpenEtabs(p => ({ ...p, [et._id]: !p[et._id] }))}
+                style={{
+                  background: 'var(--green)', color: '#fff', padding: '14px 20px', borderRadius: isEtabOpen ? '14px 14px 0 0' : '14px',
+                  cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  fontWeight: '700', fontSize: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                }}
               >
-                {label}
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  {ncInSection > 0 && (
-                    <span style={{ background: 'rgba(255,255,255,0.3)', padding: '2px 8px', borderRadius: '10px', fontSize: '11px' }}>
-                      {ncInSection} NC
-                    </span>
-                  )}
-                  <span style={{ background: 'rgba(255,255,255,0.25)', padding: '2px 8px', borderRadius: '10px', fontSize: '12px' }}>
-                    {list.length}
-                  </span>
-                  <span>{isOpen ? '▲' : '▼'}</span>
+                <span>🏫 {et.nom}</span>
+                <span style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px' }}>
+                  <span style={{ background: 'rgba(255,255,255,0.25)', padding: '2px 10px', borderRadius: '10px' }}>{totalEntries} enregistrement{totalEntries > 1 ? 's' : ''}</span>
+                  {totalNCs > 0 && <span style={{ background: 'rgba(255,80,80,0.8)', padding: '2px 10px', borderRadius: '10px' }}>{totalNCs} NC</span>}
+                  <span>{isEtabOpen ? '▲' : '▼'}</span>
                 </span>
               </div>
 
-              {isOpen && (
-                <div className="card-body">
-                  {list.length === 0 ? (
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Aucune donnée pour cette période</p>
-                  ) : (
-                    renderMerged(type, list)
-                  )}
+              {isEtabOpen && (
+                <div style={{ background: '#fff', borderRadius: '0 0 14px 14px', padding: '12px', border: '1px solid #e0e0e0', borderTop: 'none' }}>
+                  {SECTIONS.map(({ type, label, color }) => {
+                    const list = entries.filter(e => e.type === type);
+                    const sectionKey = `${et._id}_${type}`;
+                    const isOpen = openSections[sectionKey];
+                    const ncInSection = list.filter(hasNC).length;
+                    return (
+                      <div key={type} className="card" style={{ marginBottom: '10px' }}>
+                        <div
+                          className="card-header"
+                          style={{ background: color, cursor: 'pointer' }}
+                          onClick={() => setOpenSections(p => ({ ...p, [sectionKey]: !p[sectionKey] }))}
+                        >
+                          {label}
+                          <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {ncInSection > 0 && (
+                              <span style={{ background: 'rgba(255,255,255,0.3)', padding: '2px 8px', borderRadius: '10px', fontSize: '11px' }}>
+                                {ncInSection} NC
+                              </span>
+                            )}
+                            <span style={{ background: 'rgba(255,255,255,0.25)', padding: '2px 8px', borderRadius: '10px', fontSize: '12px' }}>
+                              {list.length}
+                            </span>
+                            <span>{isOpen ? '▲' : '▼'}</span>
+                          </span>
+                        </div>
+
+                        {isOpen && (
+                          <div className="card-body">
+                            {list.length === 0 ? (
+                              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Aucune donnée pour cette période</p>
+                            ) : (
+                              renderMerged(type, list)
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           );
-        })
+        })}
+            </div>
+          ));
+        })()
       )}
 
       {viewerPhotos && (
