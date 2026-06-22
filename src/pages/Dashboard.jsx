@@ -10,10 +10,7 @@ const PAGES = [
 
 export default function Dashboard({ auth, onLogout }) {
   const [page, setPage] = useState('overview');
-  const [selectedEtab, setSelectedEtab] = useState(
-    auth.etablissements?.length > 0 ? auth.etablissements[0] : null
-  );
-
+  const [openEtabId, setOpenEtabId] = useState(null);
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -28,39 +25,6 @@ export default function Dashboard({ auth, onLogout }) {
             {auth.role === 'superAdmin' ? 'Super Admin' : 'Chef de service'}
           </small>
         </div>
-
-        {auth.etablissements?.length > 1 && (
-          <div style={{ padding: '8px 20px' }}>
-            <select
-              value={selectedEtab?._id || ''}
-              onChange={e => {
-                const etab = auth.etablissements.find(et => et._id === e.target.value);
-                setSelectedEtab(etab);
-              }}
-              style={{
-                width: '100%', padding: '8px', borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '12px',
-              }}
-            >
-              {(() => {
-                const communes = {};
-                auth.etablissements.forEach(et => {
-                  const cName = et.commune?.nom || 'Autre';
-                  if (!communes[cName]) communes[cName] = [];
-                  communes[cName].push(et);
-                });
-                return Object.entries(communes).map(([cName, cEtabs]) => (
-                  <optgroup key={cName} label={cName} style={{ color: '#333' }}>
-                    {cEtabs.map(et => (
-                      <option key={et._id} value={et._id} style={{ color: '#333' }}>{et.nom}</option>
-                    ))}
-                  </optgroup>
-                ));
-              })()}
-            </select>
-          </div>
-        )}
 
         <nav className="sidebar-nav">
           {PAGES.map(p => (
@@ -81,10 +45,9 @@ export default function Dashboard({ auth, onLogout }) {
       </aside>
 
       <main className="main-content">
-        {page === 'overview' && <Overview auth={auth} etab={selectedEtab} onNavigate={(p, et) => { setSelectedEtab(et); setPage(p); }} />}
-
-        {page === 'history' && <History auth={auth} etab={selectedEtab} onChangeEtab={setSelectedEtab} />}
-        {page === 'users' && <Users auth={auth} etab={selectedEtab} />}
+        {page === 'overview' && <Overview auth={auth} onNavigate={(p, etabId) => { setOpenEtabId(etabId || null); setPage(p); }} />}
+        {page === 'history' && <History auth={auth} openEtabId={openEtabId} />}
+        {page === 'users' && <Users auth={auth} etab={auth.etablissements?.[0]} />}
       </main>
     </div>
   );

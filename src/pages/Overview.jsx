@@ -15,7 +15,7 @@ const DAILY_TYPES = [
   { type: 'cleaning', label: 'Nettoyage' },
 ];
 
-export default function Overview({ auth, etab, onNavigate }) {
+export default function Overview({ auth, onNavigate }) {
   const [allData, setAllData] = useState({});
   const [allUsers, setAllUsers] = useState({});
   const [loading, setLoading] = useState(true);
@@ -184,20 +184,28 @@ export default function Overview({ auth, etab, onNavigate }) {
 
   const launchExport = async () => {
     setExportLoading(true);
-    const selectedEtabId = document.getElementById('exportEtab')?.value;
-    const exportEtabs = selectedEtabId === 'all' ? etabs : etabs.filter(et => et._id === selectedEtabId);
-    const results = await Promise.all(exportEtabs.map(async (et) => {
-      const [res, eqRes] = await Promise.all([
-        getSaveData(auth.token, et._id, exportStart, exportEnd),
-        fetch(`https://haccp3-0-backend.vercel.app/equipement`, { headers: { Authorization: `Bearer ${auth.token}`, 'x-etablissement': et._id } }).then(r => r.json()),
-      ]);
-      return { id: et._id, nom: et.nom, entries: res.result ? res.data : [], equipement: eqRes.result ? eqRes.equipement : null };
-    }));
-    const dataMap = {};
-    results.forEach(r => { dataMap[r.id] = r; });
-    setExportData(dataMap);
+    try {
+      const selectedEtabId = document.getElementById('exportEtab')?.value;
+      const res = await fetch(`https://haccp3-0-backend.vercel.app/saveData/history?startDate=${exportStart}&endDate=${exportEnd}`, {
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      const json = await res.json();
+      if (!json.result) { setExportLoading(false); return; }
+
+      let exportEtabData = json.data;
+      if (selectedEtabId !== 'all') exportEtabData = exportEtabData.filter(d => d.id === selectedEtabId);
+
+      const eqRes = await fetch(`https://haccp3-0-backend.vercel.app/equipement/all`, { headers: { Authorization: `Bearer ${auth.token}` } }).then(r => r.json()).catch(() => ({ result: false }));
+      const allEquipements = eqRes.result ? eqRes.data : {};
+
+      const dataMap = {};
+      exportEtabData.forEach(d => {
+        dataMap[d.id] = { id: d.id, nom: d.nom, entries: d.entries || [], equipement: allEquipements[d.id] || null };
+      });
+      setExportData(dataMap);
+      generatePDF(dataMap);
+    } catch (err) { console.error('Export error:', err); }
     setExportLoading(false);
-    generatePDF(dataMap);
     setShowExportModal(false);
     setExportPreset('');
   };
@@ -645,8 +653,9 @@ export default function Overview({ auth, etab, onNavigate }) {
                             const missing = DAILY_TYPES.filter(t => getTypeDetail(t.type, entries, eq).done === 0).map(t => t.label);
                             return (
                               <React.Fragment key={et._id}>
-                                <tr>
-                                  <td><a href="#" onClick={e2 => { e2.preventDefault(); onNavigate('history', et); }} style={{ color: 'var(--green)', fontWeight: '700', textDecoration: 'underline', cursor: 'pointer' }}>{et.nom}</a></td>
+                                <tr><td colSpan={DAILY_TYPES.length + 3} style={{ padding: '10px 0', border: 'none' }}></td></tr>
+                                <tr style={{ background: '#f9f9f9' }}>
+                                  <td><a href="#" onClick={e2 => { e2.preventDefault(); onNavigate('history', et._id); }} style={{ color: 'var(--green)', fontWeight: '700', textDecoration: 'underline', cursor: 'pointer' }}>{et.nom}</a></td>
                                   {DAILY_TYPES.map(t => {
                                     const stats = getTypeDetail(t.type, entries, eq);
                                     const complete = stats.total > 0 && stats.done >= stats.total;
