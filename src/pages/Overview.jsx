@@ -103,25 +103,24 @@ export default function Overview({ auth, onNavigate }) {
     try {
       const plan = equipement?.cleaningPlan;
       if (!plan || typeof plan !== 'object') return { done: 0, total: 0 };
-      const dailyFreqs = ['Journalier', 'AfterUse'];
-      let total = 0;
-      let doneList = [];
+      const dailyTasks = new Set();
       for (const [zone, freqs] of Object.entries(plan)) {
         if (zone === '_id' || !freqs || typeof freqs !== 'object') continue;
-        for (const f of dailyFreqs) {
-          const tasks = freqs[f];
-          if (Array.isArray(tasks)) total += tasks.length;
-        }
+        const tasks = freqs['Journalier'];
+        if (Array.isArray(tasks)) tasks.forEach(t => dailyTasks.add(t));
       }
+      let doneCount = 0;
       entries.filter(e => e.type === 'cleaning').forEach(e => {
         const cleaning = e.data?.cleaning;
         if (!cleaning || typeof cleaning !== 'object') return;
         for (const zone in cleaning) {
           if (zone === 'observation' || zone === '_id') continue;
-          if (Array.isArray(cleaning[zone])) doneList.push(...cleaning[zone]);
+          if (Array.isArray(cleaning[zone])) {
+            cleaning[zone].forEach(t => { if (dailyTasks.has(t)) doneCount++; });
+          }
         }
       });
-      return { done: doneList.length, total };
+      return { done: Math.min(doneCount, dailyTasks.size), total: dailyTasks.size };
     } catch { return { done: 0, total: 0 }; }
   };
 
@@ -236,6 +235,8 @@ export default function Overview({ auth, onNavigate }) {
       </tbody></table>
     </div>`;
 
+    const allBLPhotos = [];
+
     pdfEtabs.forEach(d => {
       const et = { _id: d.id, nom: d.nom };
       const entries = d?.entries || [];
@@ -320,11 +321,11 @@ export default function Overview({ auth, onNavigate }) {
         return { ...i, conforme: conf, _date: new Date(e.createdAt).toLocaleDateString('fr-FR'), _by: e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '' };
       }));
       if (celluleItems.length > 0) {
-        let rows = celluleItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.plat}</td><td>${i.tempEntree} → ${i.tempSortie}</td><td>${i.duree}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px;color:#C7793A">${i.observation || '—'}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
-        body += section('Cellule refroidissement', '#0097A7', `<table><thead><tr><th>Date</th><th>Plat</th><th>Température entrée → sortie</th><th>Durée</th><th>Conformité</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
+        let rows = celluleItems.map(i => `<tr><td style="font-size:9px">${i._date}</td><td>${i.plat}</td><td style="font-weight:700">${i.tempEntree}</td><td>${i.heureEntree || '—'}</td><td style="font-weight:700">${i.tempSortie}</td><td>${i.heureSortie || '—'}</td><td>${i.duree || '—'}</td><td>${confCell(i.conforme)}</td><td style="font-size:9px;color:#C7793A">${i.observation || '—'}</td><td style="font-size:9px">${i._by}</td></tr>`).join('');
+        body += section('Cellule refroidissement', '#0097A7', `<table><thead><tr><th>Date</th><th>Plat</th><th>Temp. entrée</th><th>Heure entrée</th><th>Temp. sortie</th><th>Heure sortie</th><th>Durée</th><th>Conformité</th><th>Observation</th><th>Opérateur</th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
-      // Livraison — grouper départ + arrivée
+      // Livraison — grouper départ + arrivée (avec arrivées cross-établissement)
       const livraisonItems = entries.filter(e => e.type === 'livraison').flatMap(e => (e.data?.dataLivraison || []).map(i => {
         let conf = i.conforme;
         if (conf === undefined || conf === null) {
@@ -349,7 +350,7 @@ export default function Overview({ auth, onNavigate }) {
           if (matched.has(i)) return;
           rows += `<tr><td>${arr.typeTemp === 'chaud' ? '🔥' : '❄'} ${arr.produit}</td><td>${arr.siteDepart || '—'}</td><td>${arr.tempDepart || '—'}</td><td>${arr.heureDepart || '—'}</td><td>—</td><td>${arr.site}</td><td style="font-weight:700">${arr.temperature}</td><td>${arr.heure}</td><td>${confCell(arr.conforme)}</td><td>${arr._by}</td><td style="font-size:9px;color:#C7793A">${arr.observation || '—'}</td></tr>`;
         });
-        body += section('Départ / Arrivée', '#689F38', `<table><thead><tr><th>Produit</th><th colspan="4" style="background:#689F38;color:#fff;text-align:center">DÉPART</th><th colspan="5" style="background:#558B2F;color:#fff;text-align:center">ARRIVÉE</th><th>Observation</th></tr><tr><th></th><th>Site</th><th>Température</th><th>Heure</th><th>Opérateur</th><th>Site</th><th>Température</th><th>Heure</th><th>Conformité</th><th>Opérateur</th><th></th></tr></thead><tbody>${rows}</tbody></table>`);
+        body += section('Départ / Arrivée', '#689F38', `<table><thead><tr><th>Produit</th><th colspan="4" style="background:#689F38;color:#fff;text-align:center">DÉPART</th><th colspan="5" style="background:#558B2F;color:#fff;text-align:center">ARRIVÉE</th><th>Observation</th></tr><tr><th></th><th>Destination</th><th>Température</th><th>Heure</th><th>Opérateur</th><th>Site</th><th>Température</th><th>Heure</th><th>Conformité</th><th>Opérateur</th><th></th></tr></thead><tbody>${rows}</tbody></table>`);
       }
 
       // Huile
@@ -436,7 +437,7 @@ export default function Overview({ auth, onNavigate }) {
           let content = `<p style="font-size:10px;margin-bottom:8px;">${totalPhotos} photo(s) — preuve de traçabilité produits</p>`;
           Object.entries(byDate).forEach(([date, photos]) => {
             const urls = photos.map(p => p.url);
-            const imgs = photos.map((p, pi) => `<div style="display:inline-block;text-align:center;margin:4px;"><img src="${p.url}" data-group='${JSON.stringify(urls)}' data-idx="${pi}" onclick="openLb(JSON.parse(this.dataset.group),+this.dataset.idx)" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;cursor:pointer;" /><div style="font-size:8px;color:#888;">${p.by}</div></div>`).join('');
+            const imgs = photos.map((p, pi) => `<div style="display:inline-block;text-align:center;margin:4px;"><img src="${p.url}" data-group='${JSON.stringify(urls)}' data-idx="${pi}" onclick="openLb(JSON.parse(this.dataset.group),+this.dataset.idx)" style="width:100px;height:100px;object-fit:cover;border-radius:6px;border:1px solid #ddd;cursor:pointer;" /><div style="font-size:8px;color:#888;">${p.by}</div></div>`).join('');
             content += `<div style="margin-bottom:14px;"><div style="font-weight:700;font-size:11px;color:#C7793A;margin-bottom:4px;">📅 ${date}</div>${imgs}</div>`;
           });
           body += section('Étiquettes / Traçabilité DLC', '#C7793A', content);
@@ -449,6 +450,9 @@ export default function Overview({ auth, onNavigate }) {
         let content = '';
         receptionEntries.forEach(e => {
           const d2 = e.data;
+          if (Array.isArray(d2?.photosBL) && d2.photosBL.length > 0) {
+            allBLPhotos.push({ etab: et.nom, fournisseur: d2.fournisseur || '—', date: new Date(e.createdAt).toLocaleDateString('fr-FR'), urls: d2.photosBL });
+          }
           const date = new Date(e.createdAt).toLocaleDateString('fr-FR');
           const heure = new Date(e.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
           const by = e.createdBy ? `${e.createdBy.prenom} ${e.createdBy.nom}` : '';
@@ -457,7 +461,7 @@ export default function Overview({ auth, onNavigate }) {
           const allPhotos = items.flatMap(item => item.photos || []);
           items.forEach(item => {
             const photoUrls = item.photos || [];
-            const photos = photoUrls.map((url, pi) => `<img src="${url}" data-group='${JSON.stringify(allPhotos)}' data-idx="${allPhotos.indexOf(url)}" onclick="openLb(JSON.parse(this.dataset.group),+this.dataset.idx)" style="width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #ddd;cursor:pointer;" />`).join(' ');
+            const photos = photoUrls.map((url, pi) => `<img src="${url}" data-group='${JSON.stringify(allPhotos)}' data-idx="${allPhotos.indexOf(url)}" onclick="openLb(JSON.parse(this.dataset.group),+this.dataset.idx)" style="width:70px;height:70px;object-fit:cover;border-radius:4px;border:1px solid #ddd;cursor:pointer;" />`).join(' ');
             const prodName = item.nomProduit || (photoUrls.length > 0 ? 'Voir l\'image' : '—');
             const isCfTemoin = (item.temperature || '').includes('témoin');
             const tempDisplay = isCfTemoin ? '<span style="color:#2D6A4F;font-style:italic;">cf. témoin</span>' : `${item.temperature || '—'}°C`;
@@ -474,7 +478,7 @@ export default function Overview({ auth, onNavigate }) {
                 <span><strong>État camion :</strong> ${d2.etatCamion || '—'}</span>
                 <span><strong>Température camion :</strong> ${d2.tempCamion || '—'}°C</span>
                 ${d2.numeroBL ? `<span><strong>N° BL :</strong> ${d2.numeroBL}</span>` : ''}
-                ${Array.isArray(d2.photosBL) && d2.photosBL.length > 0 ? `<span><strong>${d2.numeroBL ? 'Photo BL :' : 'BL :'}</strong> ${d2.photosBL.map((url, pi) => `<img src="${url}" data-group='${JSON.stringify(d2.photosBL)}' data-idx="${pi}" onclick="openLb(JSON.parse(this.dataset.group),+this.dataset.idx)" style="width:30px;height:30px;object-fit:cover;border-radius:4px;border:1px solid #ddd;cursor:pointer;vertical-align:middle;margin-left:4px;" />`).join(' ')}</span>` : ''}
+                ${Array.isArray(d2.photosBL) && d2.photosBL.length > 0 ? `<span><strong>BL :</strong> <em style="color:#4A90D9;">cf. annexe</em></span>` : ''}
                 <span><strong>Produits :</strong> ${items.length}</span>
               </div>
             </div>
@@ -530,6 +534,7 @@ export default function Overview({ auth, onNavigate }) {
       <h1>Rapport multi-établissements</h1>
       <p class="subtitle">${dateLabel} — ${pdfEtabs.length} établissement${pdfEtabs.length > 1 ? 's' : ''}</p>
       ${body}
+      ${allBLPhotos.length > 0 ? `<div style="page-break-before:always;"><div style="background:#2D6A4F;color:#fff;padding:12px 16px;border-radius:8px;font-weight:700;font-size:14px;margin-bottom:16px;">📎 Annexe — Bons de livraison</div>${allBLPhotos.map(bl => bl.urls.map((url, i) => `<div style="page-break-inside:avoid;margin-bottom:20px;"><div style="font-weight:700;font-size:12px;color:#2D6A4F;margin-bottom:6px;">📄 ${bl.etab} — ${bl.fournisseur} — ${bl.date}${bl.urls.length > 1 ? ` (${i+1}/${bl.urls.length})` : ''}</div><img src="${url}" style="max-width:100%;max-height:700px;object-fit:contain;border-radius:8px;border:1px solid #ddd;" /></div>`).join('')).join('')}</div>` : ''}
       <div class="footer">Document généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} — FoodSafe</div>
     <script>
       var lbPhotos=[], lbIdx=0;

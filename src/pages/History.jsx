@@ -471,7 +471,7 @@ export default function History({ auth, openEtabId }) {
                               </span>
                             )}
                             <span style={{ background: 'rgba(255,255,255,0.25)', padding: '2px 8px', borderRadius: '10px', fontSize: '12px' }}>
-                              {list.length}
+                              {type === 'label' ? list.reduce((s, e) => s + (e.data?.photos?.length || 0), 0) : list.length}
                             </span>
                             <span>{isOpen ? '▲' : '▼'}</span>
                           </span>
