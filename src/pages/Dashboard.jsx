@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import Overview from './Overview'
 import Users from './Users'
 import History from './History'
+import Gestion from './Gestion'
 const PAGES = [
   { id: 'overview', label: 'Vue d\'ensemble', icon: '📊' },
   { id: 'history', label: 'Historique HACCP', icon: '📋' },
@@ -37,6 +38,11 @@ export default function Dashboard({ auth, onLogout }) {
               <span>{p.icon}</span> {p.label}
             </a>
           ))}
+          {auth.role === 'superAdmin' && (
+            <a className={page === 'gestion' ? 'active' : ''} onClick={() => setPage('gestion')} href="#">
+              <span>🏛️</span> Gestion
+            </a>
+          )}
         </nav>
 
         <div className="sidebar-logout">
@@ -48,6 +54,7 @@ export default function Dashboard({ auth, onLogout }) {
         {page === 'overview' && <Overview auth={auth} onNavigate={(p, etabId) => { setOpenEtabId(etabId || null); setPage(p); }} />}
         {page === 'history' && <History auth={auth} openEtabId={openEtabId} />}
         {page === 'users' && <Users auth={auth} etab={auth.etablissements?.[0]} />}
+        {page === 'gestion' && <Gestion auth={auth} />}
       </main>
     </div>
   );

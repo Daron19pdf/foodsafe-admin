@@ -262,7 +262,13 @@ export default function Overview({ auth, onNavigate }) {
       const ncs = getNCs(entries, true);
 
       body += `<div style="page-break-inside:avoid;margin-top:28px;border:2px solid #2D6A4F;border-radius:12px;overflow:hidden;">`;
-      body += `<div style="background:#2D6A4F;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:16px;font-weight:700;">🏫 ${et.nom}</span><span style="background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:20px;font-size:12px;">${pct}%</span></div>`;
+      body += `<div style="background:#2D6A4F;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;"><span style="font-size:16px;font-weight:700;">🏫 ${et.nom}</span><span style="background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:20px;font-size:12px;">${pct < 0 ? 'Fermé' : pct + '%'}</span></div>`;
+
+      if (pct < 0) {
+        body += `<div style="padding:14px;text-align:center;color:#999;font-style:italic;">Fermé — pas de service pour cette période</div></div>`;
+        return;
+      }
+
       body += `<div style="padding:14px;">`;
 
       // Résumé complétion
@@ -524,8 +530,8 @@ export default function Overview({ auth, onNavigate }) {
       h1 { text-align: center; color: #2D6A4F; font-size: 22px; margin-bottom: 2px; }
       .subtitle { text-align: center; color: #888; font-size: 13px; margin-bottom: 24px; }
       table { width: 100%; border-collapse: collapse; margin: 6px 0; }
-      th { background: #EAF4EC; color: #2D6A4F; padding: 6px 10px; text-align: left; font-size: 10px; border: 1px solid #ddd; text-transform: uppercase; letter-spacing: 0.3px; }
-      td { padding: 5px 10px; border: 1px solid #e8e8e8; font-size: 10px; }
+      th { background: #EAF4EC; color: #2D6A4F; padding: 6px 8px; text-align: left; font-size: 9px; border: 1px solid #ddd; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
+      td { padding: 5px 8px; border: 1px solid #e8e8e8; font-size: 10px; vertical-align: middle; }
       tr:nth-child(even) td { background: #fafafa; }
       .footer { text-align: center; color: #aaa; font-size: 9px; margin-top: 30px; padding-top: 10px; border-top: 1px solid #ddd; }
       .logo { text-align: center; margin-bottom: 8px; }
@@ -696,9 +702,9 @@ export default function Overview({ auth, onNavigate }) {
                                   <td>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                       <div style={{ flex: 1, height: '8px', background: '#eee', borderRadius: '4px', overflow: 'hidden' }}>
-                                        <div style={{ width: `${pct}%`, height: '100%', borderRadius: '4px', background: pct === 100 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)' }} />
+                                        {pct >= 0 && <div style={{ width: `${pct}%`, height: '100%', borderRadius: '4px', background: pct === 100 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)' }} />}
                                       </div>
-                                      <span style={{ fontSize: '13px', fontWeight: '700', color: pct === 100 ? 'var(--green)' : pct >= 50 ? '#8D6E00' : 'var(--red)' }}>{pct}%</span>
+                                      <span style={{ fontSize: '13px', fontWeight: '700', color: pct < 0 ? '#999' : pct === 100 ? 'var(--green)' : pct >= 50 ? '#8D6E00' : 'var(--red)' }}>{pct < 0 ? 'Fermé' : `${pct}%`}</span>
                                     </div>
                                   </td>
                                   <td>
@@ -709,13 +715,6 @@ export default function Overview({ auth, onNavigate }) {
                                     )}
                                   </td>
                                 </tr>
-                                {isToday && isAfternoon && pct < 100 && missing.length > 0 && (
-                                  <tr>
-                                    <td colSpan={DAILY_TYPES.length + 3} style={{ background: '#FFF8E1', fontSize: '12px', color: '#8D6E00', padding: '6px 14px', borderLeft: '3px solid #C49A3C' }}>
-                                      ⚠️ {missing.join(', ')} — pas encore saisi{missing.length > 1 ? 's' : ''}
-                                    </td>
-                                  </tr>
-                                )}
                               </React.Fragment>
                             );
                           })}

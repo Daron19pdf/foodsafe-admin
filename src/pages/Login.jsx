@@ -24,6 +24,7 @@ export default function Login({ onLogin }) {
           role: data.role,
           nom: data.nom,
           prenom: data.prenom,
+          username,
           etablissements: data.etablissements,
         });
       } else {
