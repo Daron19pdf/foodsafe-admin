@@ -3,7 +3,7 @@ import { getCommunes, getEtablissements } from '../api'
 
 const API = 'https://haccp3-0-backend.vercel.app';
 
-export default function Gestion({ auth }) {
+export default function Gestion({ auth, onRefreshAuth }) {
   const [communes, setCommunes] = useState([]);
   const [openCommune, setOpenCommune] = useState(null);
   const [etabs, setEtabs] = useState({});
@@ -42,7 +42,7 @@ export default function Gestion({ auth }) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
       body: JSON.stringify(newCommune),
     }).then(r => r.json());
-    if (res.result) { setNewCommune({ nom: '', ville: '' }); setShowAddCommune(false); fetchAll(); }
+    if (res.result) { setNewCommune({ nom: '', ville: '' }); setShowAddCommune(false); if (onRefreshAuth) await onRefreshAuth(); fetchAll(); }
     else alert(res.error);
   };
 
@@ -51,15 +51,16 @@ export default function Gestion({ auth }) {
 
   const confirmDelete = async () => {
     if (!deletePw) return;
-    const verify = await fetch(`${API}/auth/login`, {
+    const verify = await fetch(`${API}/auth/verify-password`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: auth.username || 'admin', password: deletePw }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+      body: JSON.stringify({ password: deletePw }),
     }).then(r => r.json());
     if (!verify.result) { alert('Mot de passe incorrect'); return; }
     const url = deleteTarget.type === 'commune' ? `${API}/admin/communes/${deleteTarget.id}` : `${API}/admin/etablissements/${deleteTarget.id}`;
     await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${auth.token}` } });
     setDeleteTarget(null); setDeletePw('');
+    if (onRefreshAuth) await onRefreshAuth();
     fetchAll();
   };
 
@@ -88,7 +89,7 @@ export default function Gestion({ auth }) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
       body: JSON.stringify({ ...newEtab, communeId }),
     }).then(r => r.json());
-    if (res.result) { setNewEtab({ nom: '', adresse: '', communeId: '' }); setShowAddEtab(null); fetchAll(); }
+    if (res.result) { setNewEtab({ nom: '', adresse: '', communeId: '' }); setShowAddEtab(null); if (onRefreshAuth) await onRefreshAuth(); fetchAll(); }
     else alert(res.error);
   };
 

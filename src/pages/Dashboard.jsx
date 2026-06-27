@@ -9,7 +9,7 @@ const PAGES = [
   { id: 'users', label: 'Utilisateurs', icon: '👥' },
 ];
 
-export default function Dashboard({ auth, onLogout }) {
+export default function Dashboard({ auth, onLogout, onRefreshAuth }) {
   const [page, setPage] = useState('overview');
   const [openEtabId, setOpenEtabId] = useState(null);
   return (
@@ -54,7 +54,7 @@ export default function Dashboard({ auth, onLogout }) {
         {page === 'overview' && <Overview auth={auth} onNavigate={(p, etabId) => { setOpenEtabId(etabId || null); setPage(p); }} />}
         {page === 'history' && <History auth={auth} openEtabId={openEtabId} />}
         {page === 'users' && <Users auth={auth} etab={auth.etablissements?.[0]} />}
-        {page === 'gestion' && <Gestion auth={auth} />}
+        {page === 'gestion' && <Gestion auth={auth} onRefreshAuth={onRefreshAuth} />}
       </main>
     </div>
   );
