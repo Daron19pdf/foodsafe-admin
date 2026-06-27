@@ -168,10 +168,27 @@ export default function Overview({ auth, onNavigate }) {
     } catch { return { done: 0, total: 0 }; }
   };
 
+  const isVacances = (equipement) => {
+    const vacs = equipement?.vacances || [];
+    const today = new Date().toISOString().split('T')[0];
+    return vacs.some(v => today >= (v.debut?.split('T')[0] || '') && today <= (v.fin?.split('T')[0] || ''));
+  };
+
+  const getTodayTasks = (equipement) => {
+    const ph = equipement?.planningHebdo || {};
+    const planning = typeof ph.toJSON === 'function' ? ph.toJSON() : ph;
+    const todayDay = new Date().getDay().toString();
+    return planning[todayDay] || [];
+  };
+
   const getCompletionPct = (entries, equipement) => {
+    if (isVacances(equipement)) return -1;
+    const todayTasks = getTodayTasks(equipement);
+    if (todayTasks.length === 0) return -1;
+    const types = DAILY_TYPES.filter(t => todayTasks.includes(t.type));
     let totalDone = 0;
     let totalExpected = 0;
-    DAILY_TYPES.forEach(t => {
+    types.forEach(t => {
       const stats = getTypeDetail(t.type, entries, equipement);
       if (stats.total > 0) {
         totalDone += Math.min(stats.done, stats.total);

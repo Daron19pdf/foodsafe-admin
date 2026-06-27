@@ -90,7 +90,7 @@ export default function Users({ auth, etab }) {
                     <td><strong>{u.prenom} {u.nom}</strong></td>
                     <td>{u.username}</td>
                     <td>
-                      {auth.role === 'superAdmin' ? (
+                      {(auth.role === 'superAdmin' || auth.role === 'chefService') ? (
                         <select
                           value={u.role}
                           onChange={e => handleRoleChange(u._id, e.target.value)}
