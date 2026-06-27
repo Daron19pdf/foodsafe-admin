@@ -174,16 +174,16 @@ export default function Overview({ auth, onNavigate }) {
     return vacs.some(v => today >= (v.debut?.split('T')[0] || '') && today <= (v.fin?.split('T')[0] || ''));
   };
 
-  const getTodayTasks = (equipement) => {
+  const getSelectedDayTasks = (equipement) => {
     const ph = equipement?.planningHebdo || {};
     const planning = typeof ph.toJSON === 'function' ? ph.toJSON() : ph;
-    const todayDay = new Date().getDay().toString();
-    return planning[todayDay] || [];
+    const day = new Date(selectedDate + 'T12:00:00').getDay().toString();
+    return planning[day] || [];
   };
 
   const getCompletionPct = (entries, equipement) => {
     if (isVacances(equipement)) return -1;
-    const todayTasks = getTodayTasks(equipement);
+    const todayTasks = getSelectedDayTasks(equipement);
     if (todayTasks.length === 0) return -1;
     const types = DAILY_TYPES.filter(t => todayTasks.includes(t.type));
     let totalDone = 0;
@@ -683,7 +683,7 @@ export default function Overview({ auth, onNavigate }) {
                               <React.Fragment key={et._id}>
                                 <tr><td colSpan={DAILY_TYPES.length + 3} style={{ padding: '10px 0', border: 'none' }}></td></tr>
                                 <tr style={{ background: '#f9f9f9' }}>
-                                  <td><a href="#" onClick={e2 => { e2.preventDefault(); onNavigate('history', et._id); }} style={{ color: 'var(--green)', fontWeight: '700', textDecoration: 'underline', cursor: 'pointer' }}>{et.nom}</a></td>
+                                  <td><a href="#" onClick={e2 => { e2.preventDefault(); onNavigate('history', et._id, selectedDate); }} style={{ color: 'var(--green)', fontWeight: '700', textDecoration: 'underline', cursor: 'pointer' }}>{et.nom}</a></td>
                                   {DAILY_TYPES.map(t => {
                                     const stats = getTypeDetail(t.type, entries, eq);
                                     const complete = stats.total > 0 && stats.done >= stats.total;

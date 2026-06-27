@@ -208,10 +208,10 @@ function PhotoViewer({ photos, startIndex, onClose }) {
   );
 }
 
-export default function History({ auth, openEtabId }) {
+export default function History({ auth, openEtabId, navDate }) {
   const today = new Date().toISOString().split('T')[0];
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
+  const [startDate, setStartDate] = useState(navDate || today);
+  const [endDate, setEndDate] = useState(navDate || today);
   const [allData, setAllData] = useState({});
   const [loading, setLoading] = useState(false);
   const [openEtabs, setOpenEtabs] = useState(openEtabId ? { [openEtabId]: true } : {});
@@ -404,7 +404,7 @@ export default function History({ auth, openEtabId }) {
 
       <div className="date-bar">
         <label>Du</label>
-        <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); if (e.target.value > endDate) setEndDate(e.target.value); }} max={today} />
+        <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setEndDate(e.target.value); }} max={today} />
         <label>au</label>
         <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); if (e.target.value < startDate) setStartDate(e.target.value); }} min={startDate} max={today} />
       </div>

@@ -87,7 +87,9 @@ export default function Users({ auth, etab }) {
     alert('Mot de passe modifié');
   };
 
-  const handleRoleChange = async (userId, role) => {
+  const handleRoleChange = async (userId, role, userName) => {
+    const roleLabel = ROLES[role]?.label || role;
+    if (!confirm(`Changer le rôle de ${userName} en "${roleLabel}" ?`)) return;
     await updateUserRole(auth.token, userId, role);
     fetchUsers();
   };
@@ -129,7 +131,7 @@ export default function Users({ auth, etab }) {
                       {(auth.role === 'superAdmin' || auth.role === 'chefService') ? (
                         <select
                           value={u.role}
-                          onChange={e => handleRoleChange(u._id, e.target.value)}
+                          onChange={e => handleRoleChange(u._id, e.target.value, `${u.prenom} ${u.nom}`)}
                           style={{ padding: '4px 8px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '12px' }}
                         >
                           {Object.entries(ROLES).filter(([id]) => id !== 'superAdmin').map(([id, r]) => (

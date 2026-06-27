@@ -12,6 +12,7 @@ const PAGES = [
 export default function Dashboard({ auth, onLogout, onRefreshAuth }) {
   const [page, setPage] = useState('overview');
   const [openEtabId, setOpenEtabId] = useState(null);
+  const [navDate, setNavDate] = useState(null);
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -51,8 +52,8 @@ export default function Dashboard({ auth, onLogout, onRefreshAuth }) {
       </aside>
 
       <main className="main-content">
-        {page === 'overview' && <Overview auth={auth} onNavigate={(p, etabId) => { setOpenEtabId(etabId || null); setPage(p); }} />}
-        {page === 'history' && <History auth={auth} openEtabId={openEtabId} />}
+        {page === 'overview' && <Overview auth={auth} onNavigate={(p, etabId, date) => { setOpenEtabId(etabId || null); setNavDate(date || null); setPage(p); }} />}
+        {page === 'history' && <History auth={auth} openEtabId={openEtabId} navDate={navDate} />}
         {page === 'users' && <Users auth={auth} etab={auth.etablissements?.[0]} />}
         {page === 'gestion' && <Gestion auth={auth} onRefreshAuth={onRefreshAuth} />}
       </main>
